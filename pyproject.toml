@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yutai-cross"
+version = "0.1.0"
+description = "株主優待クロス取引の候補検出・タイミング判定ツール"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+yutai-cross = "yutai_cross.cli:main"
+
+[tool.setuptools]
+packages = ["yutai_cross"]
