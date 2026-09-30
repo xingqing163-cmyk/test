@@ -1,0 +1,855 @@
+<title>マンガでわかる優待クロス</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<style>
+/* Layout: 学習まんが風の縦スクロール。白い紙のコマを机（ページ背景）の上に1列で並べる。
+   コマの中は常に「白い紙＋黒インク」、机とコマの外の文字だけがテーマで切り替わる。 */
+:root {
+  --desk: #e6e9ee;
+  --fg: #1b1e24;
+  --muted: #58606c;
+  --paper: #ffffff;
+  --ink: #17191d;
+  --tone: #c5cbd4;
+  --marker: #ffe03d;
+  --red: #d9362b;
+  --font-title: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  --font-talk: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --desk: #16181c; --fg: #eceef2; --muted: #a3aab5; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --desk: #16181c; --fg: #eceef2; --muted: #a3aab5; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--desk); color: var(--fg); font-family: var(--font-talk); }
+
+.page { max-width: 680px; margin-inline: auto; padding-inline: 16px; padding-block: 20px 72px; display: grid; gap: 16px; }
+
+/* ---------- コマ ---------- */
+.koma { position: relative; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); padding: 14px; overflow: hidden; }
+.koma.tone { background-color: var(--paper); background-image: radial-gradient(var(--tone) 1.1px, transparent 1.4px); background-size: 7px 7px; }
+.row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 540px) { .row, .row3 { grid-template-columns: minmax(0, 1fr); } }
+
+.cast { display: grid; grid-template-columns: minmax(64px, 22%) minmax(0, 1fr) minmax(64px, 22%); align-items: end; gap: 10px; }
+.cast.solo-l { grid-template-columns: minmax(72px, 26%) minmax(0, 1fr); }
+.cast.solo-r { grid-template-columns: minmax(0, 1fr) minmax(72px, 26%); }
+.chara { margin: 0; text-align: center; }
+.chara svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chara figcaption { font: 700 11px/1.4 var(--font-talk); letter-spacing: .1em; margin-top: 2px; }
+.lines { display: flex; flex-direction: column; gap: 12px; align-self: center; min-width: 0; padding-block: 4px; }
+@media (max-width: 520px) {
+  .cast { grid-template-columns: 50px minmax(0, 1fr) 50px; gap: 4px; }
+  .cast.solo-l { grid-template-columns: 58px minmax(0, 1fr); }
+  .cast.solo-r { grid-template-columns: minmax(0, 1fr) 58px; }
+  .chara figcaption { font-size: 10px; letter-spacing: 0; }
+}
+
+/* 吹き出し */
+.bubble { position: relative; margin: 0; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 1.5em; padding: .65em 1em; font: 500 15px/1.65 var(--font-talk); max-width: 100%; }
+.bubble.l { align-self: flex-start; margin-left: 12px; }
+.bubble.r { align-self: flex-end; margin-right: 12px; }
+.bubble.l::before, .bubble.l::after, .bubble.r::before, .bubble.r::after { content: ""; position: absolute; bottom: 12px; border-style: solid; border-color: transparent; }
+.bubble.l::before { left: -15px; border-width: 8px 15px 8px 0; border-right-color: var(--ink); }
+.bubble.l::after { left: -10px; border-width: 5.5px 10.5px 5.5px 0; border-right-color: var(--paper); bottom: 14.5px; }
+.bubble.r::before { right: -15px; border-width: 8px 0 8px 15px; border-left-color: var(--ink); }
+.bubble.r::after { right: -10px; border-width: 5.5px 0 5.5px 10.5px; border-left-color: var(--paper); bottom: 14.5px; }
+.bubble.big { font-weight: 900; font-size: 17px; }
+.bubble.shout { border-width: 3.5px; font-weight: 900; }
+
+mark { background: linear-gradient(transparent 55%, var(--marker) 55%); color: inherit; padding-inline: 1px; }
+.warn { color: var(--red); font-weight: 900; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ナレーション */
+.narr { display: inline-block; background: var(--ink); color: var(--paper); padding: .5em .85em; font: 700 14px/1.6 var(--font-talk); margin-bottom: 10px; }
+.narr mark { background: var(--marker); color: var(--ink); padding-inline: 4px; }
+.note { border: 2px solid var(--ink); background: var(--paper); padding: .6em .85em; font: 500 14px/1.7 var(--font-talk); }
+.note strong { font-weight: 900; }
+
+/* 効果音・集中線 */
+.impact { background: repeating-conic-gradient(from 0deg at 50% 46%, var(--ink) 0deg 1.3deg, var(--paper) 1.3deg 8deg); text-align: center; padding-block: 26px; }
+.impact::before { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, var(--paper) 0 34%, transparent 64%); }
+.impact > * { position: relative; }
+.sfx { display: inline-block; font-family: var(--font-title); font-size: clamp(34px, 9vw, 58px); line-height: 1.1; color: var(--paper); letter-spacing: .04em;
+  text-shadow: 2px 2px 0 var(--ink), -2px 2px 0 var(--ink), 2px -2px 0 var(--ink), -2px -2px 0 var(--ink), 0 3px 0 var(--ink), 3px 0 0 var(--ink), 5px 5px 0 var(--ink); transform: rotate(-6deg); }
+.sfx.red { color: var(--red); }
+.sfx.small { font-size: clamp(22px, 6vw, 34px); }
+.impact > .chara { width: min(150px, 38%); margin: 6px auto 0; }
+.impact > .bubble { display: inline-block; margin-top: 10px; }
+.impact .cast { text-align: left; }
+
+/* カレンダー */
+.days { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.days .span { grid-column: 1 / 4; position: relative; height: 20px; border: 2.5px solid var(--ink); border-bottom: 0; margin: 24px 16% 0; }
+.days .span b { position: absolute; top: -24px; left: 50%; transform: translateX(-50%); white-space: nowrap; font: 900 13px/1.5 var(--font-talk); background: var(--paper); padding: 0 6px; }
+.days .span::after { content: ""; position: absolute; right: -9.5px; bottom: -10px; border-style: solid; border-color: transparent; border-width: 11px 8px 0 8px; border-top-color: var(--ink); }
+.day { border: 2.5px solid var(--ink); padding: 8px 6px; text-align: center; background: var(--paper); min-width: 0; }
+.day.hi { background: var(--marker); }
+.day.rec { border: 4px solid var(--red); }
+.day b { display: block; font: 400 clamp(15px, 4vw, 19px)/1.3 var(--font-title); }
+.day span { display: block; font: 900 13px/1.4 var(--font-talk); margin-top: 4px; }
+.day em { display: block; font: 700 12px/1.45 var(--font-talk); margin-top: 6px; border-top: 1.5px dashed var(--ink); padding-top: 4px; }
+@media (max-width: 480px) {
+  .days { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .days .span { display: none; }
+}
+
+/* 話の見出し（机の上） */
+.ch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 30px; color: var(--fg); scroll-margin-top: 16px; }
+.ch-no { font: 400 14px/1 var(--font-title); background: var(--fg); color: var(--desk); padding: 7px 11px 6px; letter-spacing: .06em; }
+.ch h2 { font: 400 clamp(21px, 5.6vw, 29px)/1.35 var(--font-title); margin: 0; text-wrap: balance; }
+
+/* 表紙 */
+.cover { padding: 22px 16px 16px; }
+.cover .kicker { font: 900 15px/1.4 var(--font-talk); letter-spacing: .2em; margin: 0; }
+.cover h1 { font: 400 clamp(32px, 10vw, 76px)/1.1 var(--font-title); margin: 4px 0 10px; letter-spacing: .02em; }
+.cover h1 span { background: linear-gradient(transparent 62%, var(--marker) 62%); }
+.cover .lead { font: 700 15px/1.7 var(--font-talk); margin: 0 0 14px; max-width: 30em; }
+.who { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.who div { border: 2px solid var(--ink); background: var(--paper); padding: .5em .7em; font: 500 13px/1.6 var(--font-talk); }
+.who b { font-weight: 900; display: block; }
+@media (max-width: 420px) { .who { grid-template-columns: minmax(0, 1fr); } }
+
+.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; border: 2px solid var(--fg); color: var(--fg); text-decoration: none; padding: 5px 10px; font: 700 13px/1.4 var(--font-talk); }
+.toc a:hover, .toc a:focus-visible { background: var(--fg); color: var(--desk); outline: none; }
+
+/* 図 */
+.fig { width: 100%; height: auto; display: block; }
+.fig text { font-family: var(--font-talk); fill: var(--ink); }
+.fig .t-title { font-family: var(--font-title); }
+.cap { font: 500 13px/1.6 var(--font-talk); margin: 8px 0 0; }
+
+.flow { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: nowrap; }
+.node { border: 2.5px solid var(--ink); background: var(--paper); padding: 8px 10px; text-align: center; font: 900 14px/1.35 var(--font-talk); min-width: 0; flex: 0 1 auto; }
+.node svg { width: 44px; height: 44px; display: block; margin: 0 auto 4px; }
+.arrow { font: 700 12px/1.3 var(--font-talk); text-align: center; flex: 0 0 auto; }
+.arrow::after { content: "→"; display: block; font: 400 24px/1 var(--font-title); }
+@media (max-width: 520px) {
+  .flow { flex-direction: column; }
+  .arrow::after { content: "↓"; }
+}
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font: 500 14px/1.5 var(--font-talk); font-variant-numeric: tabular-nums; }
+th, td { border: 2px solid var(--ink); padding: 6px 8px; text-align: center; }
+td { white-space: nowrap; }
+td:first-child { white-space: normal; }
+@media (max-width: 520px) { table { font-size: 12.5px; } th, td { padding: 5px 3px; } }
+th { background: var(--ink); color: var(--paper); font-weight: 700; }
+td.zero { background: var(--marker); font-weight: 900; }
+
+/* 手順 */
+.steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 540px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+.step { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 4px 10px; align-content: start; }
+.step .badge { grid-row: span 2; width: 44px; height: 44px; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; font: 400 22px/1 var(--font-title); }
+.step .when { font: 900 12px/1.4 var(--font-talk); letter-spacing: .06em; border-bottom: 2px solid var(--ink); padding-bottom: 3px; }
+.step h3 { font: 900 16px/1.4 var(--font-talk); margin: 2px 0 0; }
+.step p { grid-column: 1 / -1; margin: 6px 0 0; font: 500 14px/1.7 var(--font-talk); }
+.step svg.icon { grid-column: 1 / -1; width: 64px; height: 64px; justify-self: end; margin-top: -4px; }
+.ticket { grid-column: 1 / -1; border: 2px dashed var(--ink); padding: 6px 8px; font: 500 13px/1.7 var(--font-talk); margin-top: 6px; }
+.ticket b { font-weight: 900; }
+
+.board { border: 3px solid var(--ink); padding: 12px 14px; background-color: var(--paper); background-image: repeating-linear-gradient(transparent 0 29px, var(--tone) 29px 30px); font: 700 15px/30px var(--font-talk); font-variant-numeric: tabular-nums; }
+.board .eq { font-size: clamp(15px, 4.2vw, 18px); font-weight: 900; }
+
+.vs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 480px) { .vs { grid-template-columns: minmax(0, 1fr); } }
+.vs > div { border: 2.5px solid var(--ink); padding: 10px 12px; }
+.vs h3 { font: 400 18px/1.3 var(--font-title); margin: 0 0 6px; }
+.vs ul { margin: 0; padding-left: 1.2em; font: 500 14px/1.7 var(--font-talk); }
+.vs .verdict { margin: 8px 0 0; font: 900 14px/1.5 var(--font-talk); }
+.vs .bad { background-image: radial-gradient(var(--tone) 1.1px, transparent 1.4px); background-size: 7px 7px; }
+
+.ng { border: 2.5px solid var(--ink); padding: 10px 12px; }
+.ng .x { font: 400 30px/1 var(--font-title); color: var(--red); }
+.ng h3 { font: 900 15px/1.45 var(--font-talk); margin: 6px 0 4px; }
+.ng p { font: 500 13px/1.65 var(--font-talk); margin: 0; }
+
+.phone { max-width: 460px; margin: 10px auto 0; border: 3px solid var(--ink); border-radius: 22px; padding: 14px 10px 18px; background: var(--paper); }
+.term { background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 12px; margin: 0; font: 500 12.5px/1.65 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.term .hl { color: var(--marker); }
+
+.sheet { background: var(--paper); color: var(--ink); border: 3px solid var(--ink); padding: 16px; }
+.sheet h2 { font: 400 22px/1.3 var(--font-title); margin: 0 0 10px; }
+.sheet dl { margin: 0; display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 8px 12px; font: 500 14px/1.7 var(--font-talk); }
+.sheet dt { font-weight: 900; border-right: 3px solid var(--marker); padding-right: 6px; }
+.sheet dd { margin: 0; }
+@media (max-width: 420px) { .sheet dl { grid-template-columns: minmax(0, 1fr); } .sheet dt { border-right: 0; border-bottom: 3px solid var(--marker); } }
+
+.foot { font: 500 12px/1.7 var(--font-talk); color: var(--muted); margin-top: 8px; }
+.foot p { margin: 0 0 4px; }
+
+/* SVG の線と塗り（キャラクター・アイコン共通） */
+.p { fill: var(--paper); stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; }
+.k { fill: var(--ink); }
+.w { fill: var(--paper); }
+.ln { fill: none; stroke: var(--ink); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.th { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; }
+.acc { fill: var(--red); stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; }
+.mk { fill: var(--marker); stroke: var(--ink); stroke-width: 3; }
+.tn { fill: var(--tone); }
+.glass { fill: var(--paper); stroke: var(--ink); stroke-width: 2.6; }
+
+a:focus-visible { outline: 3px solid var(--marker); outline-offset: 2px; }
+</style>
+
+<!-- キャラクターとアイコンの部品（非表示） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- はじめ：せどりが副業の会社員。株は初めて -->
+    <symbol id="h-base" viewBox="0 0 120 150">
+      <path class="p" d="M22 150 C24 120 41 107 60 107 C79 107 96 120 98 150 Z"/>
+      <path class="ln" d="M49 109 L60 123 L71 109"/>
+      <path class="p" d="M51 96 L51 110 L69 110 L69 96 Z"/>
+      <ellipse class="p" cx="23" cy="67" rx="6.5" ry="9.5"/>
+      <ellipse class="p" cx="97" cy="67" rx="6.5" ry="9.5"/>
+      <ellipse class="p" cx="60" cy="64" rx="37" ry="40"/>
+      <path class="k" d="M21 64 C16 28 41 11 62 13 C87 14 106 32 99 64 C95 51 88 45 80 42 L76 53 L68 41 L60 54 L53 41 L46 51 L42 43 C32 47 25 55 21 64 Z"/>
+    </symbol>
+    <symbol id="h-normal" viewBox="0 0 120 150">
+      <use href="#h-base"/>
+      <path class="ln" d="M39 57 Q46 53 53 57 M67 57 Q74 53 81 57"/>
+      <ellipse class="k" cx="46" cy="69" rx="4.2" ry="5.8"/><ellipse class="k" cx="74" cy="69" rx="4.2" ry="5.8"/>
+      <circle class="w" cx="47.5" cy="67" r="1.6"/><circle class="w" cx="75.5" cy="67" r="1.6"/>
+      <path class="ln" d="M53 87 Q60 92 67 87"/>
+    </symbol>
+    <symbol id="h-happy" viewBox="0 0 120 150">
+      <use href="#h-base"/>
+      <path class="ln" d="M40 71 Q46 62 52 71 M68 71 Q74 62 80 71"/>
+      <path class="k" d="M49 83 Q60 99 71 83 Z"/>
+      <path class="th" d="M32 82 l4 -6 M37 83 l4 -6 M42 84 l4 -6 M78 84 l4 -6 M83 83 l4 -6 M88 82 l4 -6"/>
+    </symbol>
+    <symbol id="h-confused" viewBox="0 0 120 150">
+      <use href="#h-base"/>
+      <path class="ln" d="M39 58 Q46 52 53 57 M67 60 L81 56"/>
+      <ellipse class="k" cx="46" cy="70" rx="4" ry="5.5"/><ellipse class="k" cx="74" cy="70" rx="3" ry="3.5"/>
+      <path class="ln" d="M51 89 q4.5 -4 9 0 q4.5 4 9 0"/>
+      <path class="p" d="M101 38 q8 12 0 17 q-8 -5 0 -17 z" style="stroke-width:2.5"/>
+    </symbol>
+    <symbol id="h-shock" viewBox="0 0 120 150">
+      <use href="#h-base"/>
+      <path class="th" d="M42 52 v12 M50 54 v14 M58 55 v14 M66 55 v14 M74 54 v14 M82 52 v12"/>
+      <circle class="p" cx="46" cy="72" r="7.5" style="stroke-width:2.5"/><circle class="p" cx="74" cy="72" r="7.5" style="stroke-width:2.5"/>
+      <circle class="k" cx="46" cy="72" r="1.8"/><circle class="k" cx="74" cy="72" r="1.8"/>
+      <ellipse class="k" cx="60" cy="91" rx="7" ry="9"/>
+      <path class="p" d="M104 40 q8 12 0 17 q-8 -5 0 -17 z M12 44 q7 10 0 14 q-7 -4 0 -14 z" style="stroke-width:2.5"/>
+    </symbol>
+    <symbol id="h-sleep" viewBox="0 0 120 150">
+      <use href="#h-base"/>
+      <path class="ln" d="M40 70 Q46 74 52 70 M68 70 Q74 74 80 70"/>
+      <ellipse class="p" cx="60" cy="88" rx="4" ry="3.5" style="stroke-width:2.5"/>
+    </symbol>
+
+    <!-- ゆうたい先生：優待クロス歴10年のネコ -->
+    <symbol id="c-base" viewBox="0 0 120 150">
+      <path class="p" d="M24 150 C26 118 41 103 60 103 C79 103 94 118 96 150 Z"/>
+      <path class="acc" d="M60 110 L45 101 L45 119 Z M60 110 L75 101 L75 119 Z"/>
+      <circle class="acc" cx="60" cy="110" r="4.5"/>
+      <path class="p" d="M24 52 L28 10 L55 32 Z M96 52 L92 10 L65 32 Z"/>
+      <path class="tn" d="M31 40 L33 21 L47 32 Z M89 40 L87 21 L73 32 Z"/>
+      <ellipse class="p" cx="60" cy="62" rx="41" ry="36"/>
+      <path class="ln" d="M51 30 l2 9 M60 28 v11 M69 30 l-2 9"/>
+      <path class="th" d="M14 70 l20 2.5 M14 79 l20 -1 M106 70 l-20 2.5 M106 79 l-20 -1"/>
+      <path class="k" d="M55.5 73 h9 l-4.5 5 z"/>
+      <path class="ln" d="M51 82 q4.5 5 9 0 q4.5 5 9 0"/>
+      <circle class="glass" cx="44" cy="61" r="11.5"/><circle class="glass" cx="76" cy="61" r="11.5"/>
+      <path class="ln" d="M55.5 61 h9" style="stroke-width:2.6"/>
+    </symbol>
+    <symbol id="c-smile" viewBox="0 0 120 150">
+      <use href="#c-base"/>
+      <path class="ln" d="M39 63 Q44 57 49 63 M71 63 Q76 57 81 63" style="stroke-width:2.6"/>
+    </symbol>
+    <symbol id="c-point" viewBox="0 0 120 150">
+      <use href="#c-base"/>
+      <circle class="k" cx="44" cy="61" r="3.2"/><circle class="k" cx="76" cy="61" r="3.2"/>
+      <path class="th" d="M36 52 l5 -3 M68 52 l5 -3"/>
+      <path class="ln" d="M92 124 L116 86"/>
+      <path class="k" d="M116 86 l-6 -2 l7 -6 l1 9 z"/>
+      <ellipse class="p" cx="92" cy="126" rx="7" ry="6" style="stroke-width:2.5"/>
+    </symbol>
+    <symbol id="c-serious" viewBox="0 0 120 150">
+      <use href="#c-base"/>
+      <path class="ln" d="M38 60 L50 63 M82 60 L70 63" style="stroke-width:2.6"/>
+      <path class="th" d="M49 53 l3 -4 M81 53 l3 -4"/>
+    </symbol>
+
+    <!-- アイコン -->
+    <symbol id="i-gift" viewBox="0 0 64 64">
+      <rect class="p" x="10" y="28" width="44" height="30"/>
+      <rect class="p" x="6" y="18" width="52" height="12"/>
+      <path class="acc" d="M28 18 h8 v40 h-8 z"/>
+      <path class="acc" d="M32 18 C20 4 8 12 18 18 Z M32 18 C44 4 56 12 46 18 Z"/>
+    </symbol>
+    <symbol id="i-bank" viewBox="0 0 64 64">
+      <path class="p" d="M6 22 L32 6 L58 22 Z"/>
+      <path class="p" d="M10 24 h44 v4 h-44 z"/>
+      <path class="ln" d="M16 30 v18 M26 30 v18 M38 30 v18 M48 30 v18"/>
+      <path class="p" d="M6 50 h52 v8 h-52 z"/>
+    </symbol>
+    <symbol id="i-person" viewBox="0 0 64 64">
+      <circle class="p" cx="32" cy="22" r="12"/>
+      <path class="k" d="M20 20 C20 8 44 8 44 20 C40 15 34 14 32 17 C30 14 24 15 20 20 Z"/>
+      <path class="p" d="M12 60 C14 44 22 38 32 38 C42 38 50 44 52 60 Z"/>
+    </symbol>
+    <symbol id="i-market" viewBox="0 0 64 64">
+      <rect class="p" x="6" y="8" width="52" height="48"/>
+      <path class="ln" d="M16 20 v24 M32 16 v30 M48 22 v22"/>
+      <rect class="p" x="12" y="26" width="8" height="12" style="stroke-width:2.5"/>
+      <rect class="k" x="28" y="22" width="8" height="16"/>
+      <rect class="p" x="44" y="28" width="8" height="10" style="stroke-width:2.5"/>
+    </symbol>
+    <symbol id="i-stock" viewBox="0 0 64 64">
+      <rect class="p" x="8" y="8" width="48" height="48"/>
+      <rect class="p" x="14" y="14" width="36" height="36" style="stroke-width:2"/>
+      <text x="32" y="38" text-anchor="middle" font-size="14" font-weight="900" class="k" style="font-family:var(--font-talk)">株券</text>
+    </symbol>
+    <symbol id="i-moon" viewBox="0 0 64 64">
+      <path class="mk" d="M40 8 A24 24 0 1 0 56 44 A20 20 0 1 1 40 8 Z"/>
+      <path class="th" d="M12 12 l3 3 M15 12 l-3 3 M50 8 l3 3 M53 8 l-3 3"/>
+    </symbol>
+    <symbol id="i-phone" viewBox="0 0 64 64">
+      <rect class="p" x="16" y="4" width="32" height="56" rx="6"/>
+      <path class="th" d="M22 14 h20 M22 20 h14 M22 26 h18 M22 32 h10"/>
+      <rect class="mk" x="22" y="38" width="20" height="10" style="stroke-width:2"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 64 64">
+      <circle class="p" cx="32" cy="34" r="24"/>
+      <path class="ln" d="M32 34 V16 M32 34 H18"/>
+      <path class="th" d="M32 12 v4 M32 52 v4 M10 34 h4 M50 34 h4"/>
+      <path class="ln" d="M14 8 l-6 6 M50 8 l6 6"/>
+    </symbol>
+    <symbol id="i-zzz" viewBox="0 0 64 64">
+      <text x="8" y="50" font-size="30" class="k" style="font-family:var(--font-title)">Z</text>
+      <text x="30" y="34" font-size="22" class="k" style="font-family:var(--font-title)">z</text>
+      <text x="46" y="20" font-size="15" class="k" style="font-family:var(--font-title)">z</text>
+    </symbol>
+    <symbol id="i-swap" viewBox="0 0 64 64">
+      <rect class="p" x="4" y="18" width="24" height="28"/>
+      <rect class="tn" x="36" y="18" width="24" height="28" style="stroke:var(--ink);stroke-width:3"/>
+      <path class="ln" d="M14 12 C22 2 42 2 50 12"/>
+      <path class="k" d="M50 12 l-8 -1 l6 -6 z"/>
+    </symbol>
+    <symbol id="i-mail" viewBox="0 0 64 64">
+      <rect class="p" x="6" y="14" width="52" height="38"/>
+      <path class="ln" d="M6 14 L32 36 L58 14"/>
+      <circle class="acc" cx="50" cy="16" r="8"/>
+    </symbol>
+  </defs>
+</svg>
+
+<main class="page">
+
+  <!-- 表紙 -->
+  <section class="koma tone cover" aria-labelledby="title">
+    <p class="kicker">超初心者のための</p>
+    <h1 id="title">マンガでわかる<br><span>優待クロス</span></h1>
+    <p class="lead">株価のリスクをほぼゼロにして、株主優待だけを受け取る方法。しくみと手順を、8話で順番に説明します。</p>
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-confused"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">優待クロスって何ですか？株もやったことがない、完全な初心者です…</p>
+        <p class="bubble r">大丈夫。しくみから順番に教えるにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-smile"/></svg><figcaption>ゆうたい先生</figcaption></figure>
+    </div>
+    <div class="who">
+      <div><b>はじめ</b>本業は会社員、副業でせどり。株は初めて。</div>
+      <div><b>ゆうたい先生</b>優待クロス歴10年のネコ。語尾が「にゃ」。</div>
+    </div>
+  </section>
+
+  <nav aria-label="目次">
+    <ul class="toc">
+      <li><a href="#ch1">第1話 優待のワナ</a></li>
+      <li><a href="#ch2">第2話 シーソーのしくみ</a></li>
+      <li><a href="#ch3">第3話 株を借りて売る</a></li>
+      <li><a href="#ch4">第4話 カレンダー</a></li>
+      <li><a href="#ch5">第5話 やってみよう</a></li>
+      <li><a href="#ch6">第6話 いくら儲かる？</a></li>
+      <li><a href="#ch7">第7話 注意とお金</a></li>
+      <li><a href="#ch8">最終話 ツール</a></li>
+      <li><a href="#sheet">1枚でおさらい</a></li>
+    </ul>
+  </nav>
+
+  <!-- 第1話 -->
+  <header class="ch" id="ch1"><span class="ch-no">第1話</span><h2>優待って、タダでもらえるの？</h2></header>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-happy"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">株主優待って、株を持ってるだけでプレゼントがもらえるんですよね？</p>
+        <p class="bubble r">そう。会社が決めた締め日に<mark>株主名簿</mark>に名前がある人がもらえるにゃ。たいてい100株から</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-smile"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <div class="row">
+    <section class="koma tone">
+      <span class="narr">会社が決めた締め日＝<mark>権利確定日</mark></span>
+      <div class="cast solo-r">
+        <p class="note">3月末・9月末がいちばん多い。<br>この日に名簿に載っていれば、2〜3か月後に優待が届く。</p>
+        <svg viewBox="0 0 64 64" class="fig" aria-hidden="true"><use href="#i-gift"/></svg>
+      </div>
+    </section>
+    <section class="koma">
+      <div class="cast solo-l">
+        <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-happy"/></svg></figure>
+        <div class="lines">
+          <p class="bubble l big">じゃあ買います！<br><span class="num">2,400円 × 100株 ＝ 24万円</span>！</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="koma impact">
+    <span class="narr">ところが、権利が確定した直後……</span><br>
+    <span class="sfx">ガーン</span>
+    <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-shock"/></svg></figure>
+    <p class="bubble shout num">株価が 2,400円 → 2,100円！<br>優待1,000円のために <span class="warn">3万円の損</span>！？</p>
+  </section>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-confused"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble r">権利が取れた直後は、優待目当ての人が一斉に売るから株価が下がりやすいにゃ</p>
+        <p class="bubble l">じゃあ優待って、結局損するんですか…？</p>
+        <p class="bubble r big">そこで使うのが<mark>クロス取引</mark>にゃ！</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <!-- 第2話 -->
+  <header class="ch" id="ch2"><span class="ch-no">第2話</span><h2>クロス取引は「シーソー」</h2></header>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-confused"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble r">同じ株を、<mark>同じ日・同じ値段・同じ株数</mark>で「買う」と「売る」を同時にやるにゃ</p>
+        <p class="bubble l">買って売ったら、何も残らないのでは？</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma">
+    <span class="narr">図解：2つの注文がつり合う</span>
+    <svg class="fig" viewBox="0 0 400 318" style="max-width:520px;margin-inline:auto" role="img" aria-label="シーソーの図。左に現物買い100株、右に信用売り100株。株価が動いても両者がつり合い、損得はゼロ。優待は現物についてくる。">
+      <rect class="mk" x="78" y="8" width="244" height="40" style="stroke-width:0"/>
+      <text x="200" y="37" text-anchor="middle" font-size="24" class="t-title">つり合う＝損得ゼロ</text>
+      <use href="#i-gift" x="34" y="56" width="50" height="50"/>
+      <text x="92" y="88" font-size="17" font-weight="900">← 優待は現物についてくる</text>
+      <rect class="p" x="18" y="114" width="166" height="80"/>
+      <text x="101" y="150" text-anchor="middle" font-size="27" font-weight="900">現物買い</text>
+      <text x="101" y="181" text-anchor="middle" font-size="21" font-weight="700">100株</text>
+      <rect class="tn" x="216" y="114" width="166" height="80" style="stroke:var(--ink);stroke-width:3"/>
+      <text x="299" y="150" text-anchor="middle" font-size="27" font-weight="900">信用売り</text>
+      <text x="299" y="181" text-anchor="middle" font-size="21" font-weight="700">100株</text>
+      <rect class="k" x="8" y="194" width="384" height="12"/>
+      <path class="k" d="M174 262 L226 262 L200 206 Z"/>
+      <text x="88" y="232" text-anchor="middle" font-size="18" font-weight="700">株価↑なら得</text>
+      <text x="88" y="256" text-anchor="middle" font-size="18" font-weight="700">株価↓なら損</text>
+      <text x="312" y="232" text-anchor="middle" font-size="18" font-weight="700">株価↓なら得</text>
+      <text x="312" y="256" text-anchor="middle" font-size="18" font-weight="700">株価↑なら損</text>
+      <text x="200" y="300" text-anchor="middle" font-size="17">※同じ日・同じ値段・同じ株数でそろえる</text>
+    </svg>
+  </section>
+
+  <section class="koma">
+    <span class="narr">株価がどう動いても、合計はゼロ</span>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>株価の動き</th><th>現物買い</th><th>信用売り</th><th>合計</th></tr></thead>
+        <tbody>
+          <tr><td>2,400円 → 2,100円</td><td>−30,000円</td><td>+30,000円</td><td class="zero">0円</td></tr>
+          <tr><td>2,400円 → 2,700円</td><td>+30,000円</td><td>−30,000円</td><td class="zero">0円</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-confused"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">損も得もしないなら、やる意味がないのでは…</p>
+        <p class="bubble r">ポイントは、買った100株は<mark>本当に自分の株</mark>ということ。だから株主名簿に載って、<mark>優待がもらえる</mark>にゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma impact">
+    <span class="sfx small">なるほど！</span>
+    <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-happy"/></svg></figure>
+    <p class="bubble big">株価の損得はゼロ。<br>優待だけが残る！</p>
+  </section>
+
+  <!-- 第3話 -->
+  <header class="ch" id="ch3"><span class="ch-no">第3話</span><h2>持ってない株を「売る」？</h2></header>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-confused"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">持ってない株を売るって、どういうことですか？</p>
+        <p class="bubble r">証券会社から株を<mark>借りて</mark>売るにゃ。これが<mark>信用売り（空売り）</mark>。借りるので、レンタル料の<mark>貸株料</mark>がかかる</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma tone">
+    <span class="narr">信用売りの流れ</span>
+    <div class="flow">
+      <div class="node"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-bank"/></svg>証券会社</div>
+      <div class="arrow">① 株を貸す</div>
+      <div class="node"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-person"/></svg>はじめ</div>
+      <div class="arrow">② 市場で売る</div>
+      <div class="node"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-market"/></svg>株式市場</div>
+    </div>
+    <p class="cap">借りた株は、あとで必ず返す。返し方がクロスのポイント。</p>
+  </section>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-normal"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">返すときは、また株を買って返すんですか？</p>
+        <p class="bubble r">買わなくていい。手元にある現物の100株を<mark>そのまま渡して返す</mark>。これを<mark>現渡し（げんわたし）</mark>というにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-smile"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma">
+    <span class="narr">現渡しで、きれいに終わる</span>
+    <div class="flow">
+      <div class="node"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-stock"/></svg>手元の現物<br>100株</div>
+      <div class="arrow">そのまま渡す</div>
+      <div class="node"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-bank"/></svg>借りた100株を<br>返済</div>
+    </div>
+    <p class="cap">株を市場で売り買いしないので、値段のズレが出ない。手数料もかからない証券会社が多い。</p>
+  </section>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-happy"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">せどりで言うと、先に受けた注文に、仕入れた商品をそのまま納品する感じですね！</p>
+        <p class="bubble r">そのとおり。うまいこと言うにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-smile"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <!-- 第4話 -->
+  <header class="ch" id="ch4"><span class="ch-no">第4話</span><h2>いちばん大事なのはカレンダー</h2></header>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-normal"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">締め日（権利確定日）に買えばいいんですよね？</p>
+        <p class="bubble r">残念。買った株が本当に自分のものになる（受渡し）のは<mark>2営業日後</mark>。だから締め日の<mark>2営業日前</mark>までに買う必要があるにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-serious"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma">
+    <span class="narr">例：2027年3月末が締め日の場合</span>
+    <div class="days">
+      <div class="span" aria-hidden="true"><b>買った株が届くのは2営業日後</b></div>
+      <div class="day hi"><b>3/29(月)</b><span>権利付最終日</span><em>ここまでにクロス</em></div>
+      <div class="day"><b>3/30(火)</b><span>権利落ち日</span><em>ここから現渡しOK</em></div>
+      <div class="day rec"><b>3/31(水)</b><span>権利確定日</span><em>名簿の締め日</em></div>
+      <div class="day"><b>4/1(木)</b><span>ふつうの日</span><em>—</em></div>
+    </div>
+    <p class="cap">3/29(月)に買った株は、2営業日後の3/31(水)に自分のものになる。だから3/31の名簿に載る。</p>
+  </section>
+
+  <div class="row">
+    <section class="koma">
+      <span class="narr">権利付最終日</span>
+      <p class="note"><strong>クロスの締め切り。</strong>この日の取引までに「買い」と「売り」をそろえる。</p>
+    </section>
+    <section class="koma">
+      <span class="narr">権利落ち日</span>
+      <p class="note"><strong>現渡しの解禁日。</strong>権利付最終日の次の営業日。この日以降に現渡しで終わらせる。</p>
+    </section>
+  </div>
+
+  <section class="koma impact">
+    <span class="narr">よくある失敗</span><br>
+    <p class="bubble big">権利付最終日に、うっかり現渡しすると……</p><br>
+    <span class="sfx red">優待消滅!!</span>
+    <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-shock"/></svg></figure>
+    <p class="note" style="display:inline-block;margin-top:8px">現渡しした株も2営業日後に相手に渡るので、締め日に名簿に残らない。<strong>現渡しは必ず権利落ち日以降。</strong></p>
+  </section>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-normal"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble r">締め日が土日・祝日のときや、12月末（大晦日は取引所が休み）は日付がずれるにゃ。日付は手で数えず、必ずツールで確認するにゃ</p>
+        <p class="bubble l">手で数えないようにします！</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <!-- 第5話 -->
+  <header class="ch" id="ch5"><span class="ch-no">第5話</span><h2>実際にやってみよう</h2></header>
+
+  <section class="koma tone">
+    <span class="narr">練習の題材（架空の銘柄）</span>
+    <p class="note num">（架空）みなとドラッグ／株価 2,400円／100株／優待：QUOカード1,000円<br>2026年12月末が締め日 → <strong>権利付最終日 12/28(月)</strong>・<strong>権利落ち日 12/29(火)</strong></p>
+  </section>
+
+  <div class="steps">
+    <section class="koma step">
+      <span class="badge">1</span>
+      <span class="when">前の晩〜当日の朝</span>
+      <h3>在庫をチェック</h3>
+      <p>証券会社の画面で「<mark>一般信用</mark>」の売りの在庫が100株以上あるか確認。在庫がないと売れない（先着順）。</p>
+      <svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-phone"/></svg>
+    </section>
+    <section class="koma step">
+      <span class="badge">2</span>
+      <span class="when">朝 8:59 まで</span>
+      <h3>2つの注文を出す</h3>
+      <p><mark>先に売り、すぐ買い</mark>の順。売りが通らないのに買ってしまう事故を防ぐ。</p>
+      <div class="ticket"><b>① 信用新規売り</b>：一般信用（短期）・100株・成行・<b>寄付</b><br><b>② 現物買い</b>：100株・成行・<b>寄付</b>・預り区分<b>「特定」</b></div>
+    </section>
+    <section class="koma step">
+      <span class="badge">3</span>
+      <span class="when">朝 9:00</span>
+      <h3>約定を確認</h3>
+      <p>「寄付」＝朝9:00の最初の取引。両方が<mark>同じ株数・同じ値段</mark>で約定したか確認する。</p>
+      <svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-clock"/></svg>
+    </section>
+    <section class="koma step">
+      <span class="badge">4</span>
+      <span class="when">権利落ち日の前まで</span>
+      <h3>何もしない</h3>
+      <p>株価がどう動いても合計はゼロ。<mark>途中で片方だけ売らない</mark>。現渡しもまだしない。</p>
+      <svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-zzz"/></svg>
+    </section>
+    <section class="koma step">
+      <span class="badge">5</span>
+      <span class="when">権利落ち日 12/29 以降</span>
+      <h3>現渡しで終わらせる</h3>
+      <p>メニューの「現引・現渡」から建玉を選んで<mark>「現渡」</mark>。「返済買い」ではないので注意。</p>
+      <svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-swap"/></svg>
+    </section>
+    <section class="koma step">
+      <span class="badge">6</span>
+      <span class="when">2〜3か月後</span>
+      <h3>優待が届く！</h3>
+      <p>届いたら、いつ・何を・いくら分もらったかを記録しておく（確定申告で使う）。</p>
+      <svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-mail"/></svg>
+    </section>
+  </div>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-confused"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">なんで両方「寄付」で出すんですか？</p>
+        <p class="bubble r">朝9:00の最初の取引は、全員が<mark>同じ1つの値段</mark>で約定するからにゃ。両方そろえれば値段のズレが出ない。証券会社もこの出し方を案内しているにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <!-- 第6話 -->
+  <header class="ch" id="ch6"><span class="ch-no">第6話</span><h2>いくら儲かるの？（コストの話）</h2></header>
+
+  <section class="koma">
+    <div class="cast solo-r">
+      <div class="lines">
+        <p class="bubble r">利益は「優待の価値 − コスト」。コストの中心は、株を借りるレンタル料の<mark>貸株料</mark>にゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+    <div class="board" style="margin-top:12px">
+      <div>貸株料 ＝ 代金 × 年率 × 日数 ÷ 365</div>
+      <div class="eq num">＝ 24万円 × 3.9% × 6日 ÷ 365 ＝ 153円</div>
+      <div class="eq num">利益 ＝ 1,000円 − 153円 ＝ <mark>847円</mark></div>
+    </div>
+    <p class="cap">※日数は受渡日で数える。12月は年末年始をまたぐので、最終日にクロスしても6日分かかる。年3.9%はSBI証券・楽天証券の一般信用（短期）の例（2026年9月時点）。</p>
+  </section>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-normal"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">早めにクロスしたらどうなりますか？</p>
+        <p class="bubble r">借りる日数が増えるぶん、貸株料も増えるにゃ。12/8にクロスすると貸株料666円で、利益は334円。人気の銘柄は在庫がすぐなくなるから、<mark>早めに取るか、ぎりぎりまで待つか</mark>の勝負になるにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-smile"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma">
+    <span class="narr">信用売りには2種類ある</span>
+    <div class="vs">
+      <div>
+        <h3>一般信用</h3>
+        <ul>
+          <li>証券会社が株を用意してくれる</li>
+          <li><mark>逆日歩なし</mark>。コストが事前にわかる</li>
+          <li>在庫がないと売れない</li>
+        </ul>
+        <p class="verdict">→ 初心者はこっちだけ</p>
+      </div>
+      <div class="bad">
+        <h3>制度信用</h3>
+        <ul>
+          <li>取引所のルールで決まった信用取引</li>
+          <li>株が足りないと<span class="warn">逆日歩</span>（追加料金）がかかる</li>
+          <li>金額は後からしかわからない</li>
+        </ul>
+        <p class="verdict">→ 上級者向け</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="koma impact">
+    <span class="sfx">ドドドド</span>
+    <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-shock"/></svg></figure>
+    <p class="bubble shout num">同じ例を制度信用でやると、<br>逆日歩が最悪 <span class="warn">12,000円</span>！？<br>優待1,000円なのに！</p>
+    <p class="note" style="display:inline-block;margin-top:8px">人気の優待は権利付最終日に株が足りなくなりやすく、逆日歩の上限も4倍になる。年末年始や連休は日数分かかる。</p>
+  </section>
+
+  <section class="koma">
+    <div class="cast solo-r">
+      <div class="lines">
+        <p class="bubble r big">だから最初は<mark>一般信用だけ</mark>使う。これだけ守れば大ケガはしないにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-serious"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <!-- 第7話 -->
+  <header class="ch" id="ch7"><span class="ch-no">第7話</span><h2>やらかし注意と、お金の話</h2></header>
+
+  <div class="row3">
+    <section class="koma ng">
+      <span class="x">×</span>
+      <h3>日付を間違える</h3>
+      <p>月末が休日、12月末などでずれる。日付はツールで確認。</p>
+    </section>
+    <section class="koma ng">
+      <span class="x">×</span>
+      <h3>最終日に現渡し</h3>
+      <p>優待がもらえず、コストだけかかる。現渡しは権利落ち日以降。</p>
+    </section>
+    <section class="koma ng">
+      <span class="x">×</span>
+      <h3>NISA・株数のミス</h3>
+      <p>現物買いの預り区分は「特定」。必要株数（100株？500株？）を指差し確認。</p>
+    </section>
+  </div>
+
+  <section class="koma">
+    <div class="cast solo-r">
+      <div class="lines">
+        <p class="bubble r">はじめさんは会社員だったにゃ。<mark>勤務先や取引先の株</mark>は、社内ルールやインサイダー取引の規制にふれることがある。最初から候補から外しておくにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-serious"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-normal"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">税金はどうなりますか？せどりで確定申告をしています</p>
+        <p class="bubble r">株の売買や貸株料は、<mark>特定口座（源泉徴収あり）</mark>なら証券会社が計算してくれるにゃ。優待は<mark>雑所得</mark>。確定申告をするなら、金額が小さくても一緒に書くにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-smile"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="koma tone">
+    <span class="narr">口座を開いたら、最初にやる設定</span>
+    <p class="note"><strong>① 特定口座（源泉徴収あり）</strong>を選ぶ<br><strong>② 配当の受け取り方を「株式数比例配分方式」</strong>にする<br>→ クロス中の配当で引かれすぎた税金が、年明けに自動で戻ってくる<br><strong>③ せどりの帳簿とは混ぜない</strong>（優待品は仕入れではない）</p>
+  </section>
+
+  <!-- 最終話 -->
+  <header class="ch" id="ch8"><span class="ch-no">最終話</span><h2>面倒な計算はツールに任せよう</h2></header>
+
+  <section class="koma">
+    <div class="cast">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-confused"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">日付やコストの計算、自信ないです…</p>
+        <p class="bubble r">このリポジトリのツールに、気になる銘柄を登録しておくにゃ。毎日「今日やること」を教えてくれるにゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-point"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+    <div class="phone">
+      <pre class="term">$ python -m yutai_cross today
+■ 今日 2026-10-28(水)
+  - <span class="hl">[最終日]</span> X001 （架空）さくらフーズ:
+    権利付最終日。未クロスなら寄付前に
+    「現物買い(寄成) 100株＋
+     SBI証券 一般信用(短期) 売り(寄成) 100株」
+■ 次の営業日 2026-10-29(木)
+  - <span class="hl">[現渡し]</span> X001 （架空）さくらフーズ:
+    権利落ち日。クロスした建玉があれば
+    「現渡し（品渡し）」で決済</pre>
+    </div>
+    <p class="cap">ほかにも、どの銘柄がいくら儲かるかのランキング、早めにクロスしてよい日、スマホのカレンダーに入れる予定表を出せます。在庫の確認と注文だけは、自分で証券会社の画面から行います。</p>
+  </section>
+
+  <section class="koma impact">
+    <span class="sfx">おー！</span>
+    <div class="cast" style="max-width:420px;margin:6px auto 0">
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#h-happy"/></svg><figcaption>はじめ</figcaption></figure>
+      <div class="lines">
+        <p class="bubble l">まずは1銘柄、少額で練習してみます！</p>
+        <p class="bubble r">最初は儲けより、<mark>手順を体で覚える</mark>のが目標にゃ</p>
+      </div>
+      <figure class="chara"><svg viewBox="0 0 120 150" aria-hidden="true"><use href="#c-smile"/></svg><figcaption>先生</figcaption></figure>
+    </div>
+  </section>
+
+  <!-- まとめ -->
+  <section class="sheet" id="sheet" aria-labelledby="sheet-title">
+    <h2 id="sheet-title">1枚でおさらい</h2>
+    <dl>
+      <dt>しくみ</dt>
+      <dd>同じ株を「現物買い」と「信用売り」で、同じ日・同じ値段・同じ株数。株価の損得はゼロで、優待だけ残る。</dd>
+      <dt>日付</dt>
+      <dd><mark>権利付最終日</mark>までにクロス。<mark>権利落ち日</mark>以降に現渡し。日付はツールで確認。</dd>
+      <dt>手順</dt>
+      <dd>在庫確認 → ①信用売り（寄付・成行）→ ②現物買い（寄付・成行・特定）→ 9:00に約定確認 → 待つ → 現渡し → 優待を記録。</dd>
+      <dt>お金</dt>
+      <dd>利益 ＝ 優待の価値 − 貸株料など。最初は<mark>一般信用だけ</mark>（逆日歩なし）。</dd>
+      <dt>準備</dt>
+      <dd>信用取引口座／特定口座（源泉徴収あり）／配当は株式数比例配分方式。勤務先・取引先の株は外す。</dd>
+      <dt>税金</dt>
+      <dd>優待は雑所得。せどりで確定申告するなら一緒に申告。せどりの帳簿とは分ける。</dd>
+    </dl>
+  </section>
+
+  <footer class="foot">
+    <p>詳しい解説は、同じリポジトリの講座（docs/course/）の第1回〜第10回にあります。</p>
+    <p>料率やルールは2026年9月時点で調べたものです。実際に注文する前に、証券会社と会社のIRで最新の情報を確認してください。</p>
+    <p>登場する銘柄はすべて架空です。このマンガは情報提供が目的で、特定の銘柄や証券会社をすすめるものではありません。投資の最終判断はご自身でお願いします。</p>
+  </footer>
+</main>
