@@ -41,6 +41,7 @@ class PrimitiveTest(unittest.TestCase):
         self.assertEqual(dividend_cost(30, 100, 0.84685, False), 150)
 
     def test_approx_max_gyakuhibu(self):
+        self.assertEqual(approx_max_gyakuhibu(300), 1.0)  # 500円以下が最下位の帯
         self.assertEqual(approx_max_gyakuhibu(980), 2.0)
         self.assertEqual(approx_max_gyakuhibu(1000), 2.0)
         self.assertEqual(approx_max_gyakuhibu(1001), 3.0)
@@ -94,8 +95,9 @@ class QuoteTest(unittest.TestCase):
         q = quote(self.item(resale_value=1800), self.rd, methods()["sbi_short"],
                   self.rd.last_cum_date, self.cal, self.settings)
         self.assertEqual(q.value, 1800)
-        self.assertEqual(q.benefit_tax, 540)
-        self.assertEqual(q.net_expected, 1800 - 540 - 79)
+        # 税は時価（優待価値・換金価値の大きい方）にかかる
+        self.assertEqual(q.benefit_tax, 900)
+        self.assertEqual(q.net_expected, 1800 - 900 - 79)
 
     def test_entry_after_last_cum_rejected(self):
         with self.assertRaises(ValueError):

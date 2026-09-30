@@ -11,7 +11,19 @@ from typing import List, Optional, Sequence
 from .config import Settings
 from .costs import Quote
 from .jpx_calendar import WEEKDAY_JA, MarketCalendar, fmt_date
-from .planner import Action, EventPlan, MethodPlan, PlanResult, actions_on, peak_capital
+from .planner import (
+    COMMON_INVENTORY_WARNING,
+    Action,
+    EventPlan,
+    MethodPlan,
+    PlanResult,
+    actions_on,
+    peak_capital,
+    short_due_date,
+)
+
+DISCLAIMER = ("※ 入力値と設定にもとづく試算です。特定の銘柄の売買を勧めるものではありません。"
+              "料率・在庫・優待内容は変わるので、発注前に証券会社と会社IRで最新情報を確認してください。")
 
 
 def short_date(d: Optional[date]) -> str:
@@ -50,6 +62,22 @@ def _table(headers: Sequence[str], rows: List[Sequence[str]], widths: Sequence[i
     return "\n".join(lines)
 
 
+def short_method(m) -> str:
+    """表の中で使う短い方法名（例: SBI 短期、楽天 無期限、制度信用）。"""
+    if m.is_seido:
+        return "制度信用"
+    return f"{m.broker} {'短期' if m.is_short_term else '無期限'}"
+
+
+def _short_phase(phase: str) -> str:
+    """表の「状態」列用の短い表記。"""
+    if phase.startswith("待機（"):
+        return phase[len("待機（"):].rstrip("）")
+    if phase.startswith("クロス済み"):
+        return "クロス済"
+    return phase.replace("本日が権利付最終日", "本日が最終日")
+
+
 def _valuation_label(settings: Settings) -> str:
     return "換金価値" if settings.valuation == "resale" else "優待価値（自分で使う場合）"
 
@@ -57,7 +85,8 @@ def _valuation_label(settings: Settings) -> str:
 def cost_breakdown(q: Quote) -> str:
     parts = [f"貸株料 {q.lending_fee:,}円（{q.lending_days}日分）"]
     if q.method.is_seido:
-        parts.append(f"逆日歩 想定{q.gyakuhibu_expected:,}円／最悪{q.gyakuhibu_worst:,}円（{q.gyakuhibu_days}日分）")
+        parts.append(f"逆日歩 想定{q.gyakuhibu_expected:,}円／上限側の見積もり{q.gyakuhibu_worst:,}円"
+                     f"（{q.gyakuhibu_days}日分）")
     parts.append(f"手数料 {q.commissions:,}円")
     if q.dividend_cost:
         sign = "損" if q.dividend_cost > 0 else "得"
@@ -79,7 +108,7 @@ def _actions_text(title: str, actions: List[Action]) -> List[str]:
 def render_console(result: PlanResult, settings: Settings, cal: MarketCalendar) -> str:
     today = result.today
     out: List[str] = []
-    bar = "=" * 100
+    bar = "=" * 80
     out += [
         bar,
         f" 優待クロス 自動検出レポート   基準日: {fmt_date(today)}",
@@ -93,28 +122,27 @@ def render_console(result: PlanResult, settings: Settings, cal: MarketCalendar) 
         out.append("")
     nxt = cal.next_business_day(today)
     out += _actions_text(
-        f"■ 次の営業日 {fmt_date(nxt)} にやること（今夜〜当日8:59までに注文）",
+        f"■ 次の営業日 {fmt_date(nxt)} にやること（寄付で約定させる注文は今夜〜当日8:59までに）",
         actions_on(nxt, result),
     )
     out.append("")
 
     rec = result.recommended
-    out.append("■ おすすめ候補（見込み利益の大きい順）")
+    out.append("■ 条件を満たす候補（見込み利益の大きい順・試算）")
     if rec:
-        headers = ["No", "コード", "銘柄", "付最終日", "推奨方法", "推奨ｴﾝﾄﾘｰ", "建て可能",
-                   "損益分岐", "評価額", "コスト", "利益", "利回り", "状態"]
-        widths = [3, 6, 22, 10, 24, 10, 10, 10, 7, 6, 7, 6, 20]
+        headers = ["コード", "銘柄", "クロス日", "どこで", "付最終日", "利益", "状態"]
+        widths = [6, 20, 10, 10, 10, 7, 18]
         rows = []
-        for i, p in enumerate(rec, 1):
+        for p in rec:
             mp = p.best
             q = mp.recommended
             rows.append([
-                str(i), p.item.code, p.item.name, short_date(p.rights.last_cum_date),
-                mp.method.label, short_date(q.entry_date), short_date(mp.window_start),
-                short_date(mp.breakeven_date), yen(q.value), yen(q.cost_expected),
-                yen(q.net_expected), f"{p.roi:.2%}" if p.roi is not None else "-", p.phase,
+                p.item.code, p.item.name, short_date(q.entry_date), short_method(mp.method),
+                short_date(p.rights.last_cum_date), yen(q.net_expected), _short_phase(p.phase),
             ])
-        out.append(_table(headers, rows, widths, right_cols=(0, 8, 9, 10, 11)))
+        out.append(_table(headers, rows, widths, right_cols=(5,)))
+        out.append("  ※クロス日＝エントリーの目安日。利益＝優待価値−貸株料など（円）。"
+                   "方法別の比較・建て可能日・損益分岐日は plan -o のレポートに")
     else:
         out.append("  （条件を満たす候補はありません）")
     out.append("")
@@ -139,8 +167,13 @@ def render_console(result: PlanResult, settings: Settings, cal: MarketCalendar) 
         out.append("")
 
     warn_lines = []
+    if any(COMMON_INVENTORY_WARNING in p.warnings for p in result.recommended):
+        warn_lines.append(f"  - 全銘柄共通: {COMMON_INVENTORY_WARNING}")
     for p in result.recommended + result.passed:
         for w in p.warnings:
+            # 見送りの銘柄は、入力の読み違いなど直すべき注意だけ出す
+            if w == COMMON_INVENTORY_WARNING or (p.best is None and "読め" not in w):
+                continue
             warn_lines.append(f"  - [{p.item.code} {p.rights.record_date.month}月] {w}")
     if warn_lines:
         out.append("■ 注意事項")
@@ -153,15 +186,15 @@ def render_console(result: PlanResult, settings: Settings, cal: MarketCalendar) 
 
     peak, peak_day = peak_capital(result.plans)
     if peak:
-        out.append(f"■ 推奨どおりに建てた場合の必要資金ピーク（目安）: {peak:,}円（{fmt_date(peak_day)}ごろ）")
+        out.append(f"■ 目安どおりに建てた場合の必要資金ピーク: {peak:,}円（{fmt_date(peak_day)}ごろ）")
         out.append("   ※現物代金＋信用建玉の委託保証金。信用口座には別途 最低30万円の保証金が必要")
-    out.append("※ 料率・在庫・優待内容は変わります。発注前に必ず証券会社と会社IRで最新情報を確認してください。")
+    out.append(DISCLAIMER)
     return "\n".join(out)
 
 
 def _method_table_md(p: EventPlan, settings: Settings) -> List[str]:
     lines = [
-        "| 方法 | 建て可能開始 | 損益分岐日 | 最終日クロス利益 | 推奨日 | 推奨日の利益 | 最悪ケース利益 | 備考 |",
+        "| 方法 | 建て可能開始 | 損益分岐日 | 最終日クロス利益 | 目安日 | 目安日の利益 | 上限側で見た利益 | 備考 |",
         "|---|---|---|---:|---|---:|---:|---|",
     ]
     for mp in p.method_plans:
@@ -183,7 +216,7 @@ def _plan_md(i: int, p: EventPlan, settings: Settings, cal: MarketCalendar) -> L
     if it.resale_value is not None:
         value_note += f"（換金なら {it.resale_value:,}円）"
     lines += [
-        f"- 優待: {it.benefit or '（内容未入力）'} / 評価 {value_note} / 必要 {it.shares:,}株",
+        f"- 優待: {it.benefit or '（内容未入力）'} / 優待価値 {value_note} / 必要 {it.shares:,}株",
         f"- 権利確定日: {fmt_date(rd.record_date)} ／ **権利付最終日: {fmt_date(rd.last_cum_date)}** ／ "
         f"権利落ち日(現渡し日): {fmt_date(rd.ex_date)}",
         f"- 状態: {p.phase}",
@@ -191,10 +224,12 @@ def _plan_md(i: int, p: EventPlan, settings: Settings, cal: MarketCalendar) -> L
     mp = p.best
     if mp is not None:
         q = mp.recommended
+        due = short_due_date(cal, q.entry_date, mp.method) if mp.method.is_short_term else None
+        due_text = f"（返済期日 {fmt_date(due)}。過ぎると強制決済）" if due else ""
         lines += [
-            f"- **推奨: {mp.method.label} で {fmt_date(q.entry_date)} にクロス → "
+            f"- **試算上の目安: {mp.method.label} で {fmt_date(q.entry_date)} にクロス → "
             f"{fmt_date(rd.ex_date)} に現渡し**（{mp.reason}）",
-            f"- 見込み利益: **{q.net_expected:,}円**（評価額 {q.value:,}円 − コスト {q.cost_expected:,}円）",
+            f"- 見込み利益: **{q.net_expected:,}円**（優待価値 {q.value:,}円 − コスト {q.cost_expected:,}円）",
             f"- コスト内訳: {cost_breakdown(q)}",
             f"- 必要資金目安: {p.capital:,}円（1回の利回り {p.roi:.2%}）",
             "",
@@ -202,11 +237,12 @@ def _plan_md(i: int, p: EventPlan, settings: Settings, cal: MarketCalendar) -> L
             "",
             f"1. {fmt_date(cal.add_business_days(q.entry_date, -1))} の夜〜{fmt_date(q.entry_date)} 8:59: "
             f"{mp.method.label} の売り在庫があるか確認",
-            f"2. 同じタイミングで「現物買い {it.shares:,}株・成行・寄付(寄成)」と"
-            f"「信用新規売り {it.shares:,}株・成行・寄付(寄成)・{mp.method.term_label}」を続けて発注",
-            "3. 9:00の寄付で約定したら、現物と売建玉が同じ株数・同じ値段か確認",
-            f"4. {fmt_date(rd.ex_date)}（権利落ち日）以降に、売建玉を「現渡し（品渡し）」で決済"
-            "（付最終日に現渡しすると権利がなくなるので注意）",
+            f"2. 先に「①信用新規売り {it.shares:,}株・成行・寄付(寄成)・{mp.method.term_label}」、"
+            f"通ったらすぐ「②現物買い {it.shares:,}株・成行・寄付(寄成)・預り区分 特定」を発注",
+            "3. 9:00の寄付で約定したら、現物と売建玉が同じ株数・同じ値段か確認"
+            "（片方だけなら講座第4回 STEP5 の対処）。建てたらウォッチリストの「クロス済」に○",
+            f"4. {fmt_date(rd.ex_date)}（権利落ち日）に、売建玉を「現渡し（品渡し）」で決済{due_text}。"
+            "権利付最終日に現渡しすると権利がなくなるので注意",
         ]
     else:
         lines.append("- 判定: **見送り**")
@@ -225,9 +261,11 @@ def render_markdown(result: PlanResult, settings: Settings, cal: MarketCalendar)
         f"- 評価方法: {_valuation_label(settings)} / 最低利益: {settings.min_profit_yen:,}円 / "
         f"対象: 権利付最終日が{settings.horizon_days}日先まで",
         f"- 配当の源泉税: {'特定口座の損益通算で戻る前提' if settings.dividend_tax_recovered else '戻らない前提'}",
-        f"- 制度信用の判定: {'逆日歩の最悪ケース' if settings.seido_risk_basis == 'worst' else '逆日歩の想定値'}で評価",
+        "- 制度信用の判定: "
+        + (f"逆日歩を最高料率×{settings.seido_worst_multiplier:g}倍で見積もって評価"
+           if settings.seido_risk_basis == "worst" else "逆日歩の想定値で評価"),
         "",
-        "> 料率・在庫・優待内容は変わります。発注前に証券会社と会社IRで最新情報を確認してください。",
+        f"> {DISCLAIMER}",
         "",
     ]
     nxt = cal.next_business_day(today)
@@ -241,10 +279,10 @@ def render_markdown(result: PlanResult, settings: Settings, cal: MarketCalendar)
         lines.append("")
 
     rec = result.recommended
-    lines += ["## おすすめ候補一覧", ""]
+    lines += ["## 条件を満たす候補（試算）", ""]
     if rec:
         lines += [
-            "| No | コード | 銘柄 | 権利付最終日 | 推奨方法 | 推奨エントリー | 見込み利益 | 利回り | 状態 |",
+            "| No | コード | 銘柄 | 権利付最終日 | 方法 | エントリー目安日 | 見込み利益 | 利回り | 状態 |",
             "|---:|---|---|---|---|---|---:|---:|---|",
         ]
         for i, p in enumerate(rec, 1):
@@ -259,7 +297,7 @@ def render_markdown(result: PlanResult, settings: Settings, cal: MarketCalendar)
     lines.append("")
     peak, peak_day = peak_capital(result.plans)
     if peak:
-        lines += [f"推奨どおりに建てた場合の必要資金ピーク（目安）: **{peak:,}円**（{fmt_date(peak_day)}ごろ）", ""]
+        lines += [f"目安どおりに建てた場合の必要資金ピーク: **{peak:,}円**（{fmt_date(peak_day)}ごろ）", ""]
 
     for i, p in enumerate(rec, 1):
         lines += _plan_md(i, p, settings, cal)
@@ -278,9 +316,9 @@ def render_markdown(result: PlanResult, settings: Settings, cal: MarketCalendar)
 
 CSV_HEADERS = [
     "判定", "状態", "コード", "銘柄", "権利月", "権利確定日", "権利付最終日", "権利落ち日",
-    "推奨方法", "推奨エントリー日", "建て可能開始日", "損益分岐日", "評価額", "貸株料",
-    "逆日歩(想定)", "逆日歩(最悪)", "手数料", "配当まわり", "コスト合計", "見込み利益",
-    "最悪ケース利益", "必要資金", "利回り", "注意",
+    "方法", "エントリー目安日", "建て可能開始日", "損益分岐日", "優待価値", "貸株料",
+    "逆日歩(想定)", "逆日歩(上限側)", "手数料", "配当まわり", "コスト合計", "見込み利益",
+    "上限側で見た利益", "必要資金", "利回り", "注意",
 ]
 
 
@@ -292,7 +330,7 @@ def render_csv(result: PlanResult, settings: Settings) -> str:
         mp: Optional[MethodPlan] = p.shown
         q = (mp.recommended or mp.cheapest) if mp else None
         if p.best:
-            verdict = "推奨"
+            verdict = "候補"
         elif result.today > p.rights.last_cum_date:
             verdict = "現渡し待ち"
         else:
@@ -355,16 +393,16 @@ def render_ics(result: PlanResult, settings: Settings, now: Optional[datetime] =
     for p in result.recommended:
         it, rd, mp = p.item, p.rights, p.best
         q = mp.recommended
-        base = f"{it.code}-{rd.record_date.isoformat()}"
+        base = f"{it.code}-{it.shares}-{rd.record_date.isoformat()}"
         info = (f"{it.name}（{it.benefit or '優待'}）\n方法: {mp.method.label}\n"
                 f"見込み利益: {q.net_expected:,}円\n権利付最終日: {fmt_date(rd.last_cum_date)}\n"
                 f"現渡し: {fmt_date(rd.ex_date)}")
         if q.entry_date != rd.last_cum_date:
-            event(q.entry_date, f"{base}-entry", f"【優待クロス】{it.code} {it.name} 推奨エントリー", info)
+            event(q.entry_date, f"{base}-entry", f"【優待クロス】{it.code} {it.name} エントリー目安", info)
         event(rd.last_cum_date, f"{base}-last", f"【優待クロス】{it.code} {it.name} 権利付最終日", info)
         event(rd.ex_date, f"{base}-ex", f"【優待クロス】{it.code} {it.name} 現渡し", info)
-        if (not mp.method.is_seido and mp.method.max_hold_business_days is not None
-                and mp.window_start >= result.today):
+        if (mp.method.is_short_term and mp.window_start >= result.today
+                and mp.window_start != q.entry_date):
             event(mp.window_start, f"{base}-open", f"【優待クロス】{it.code} {it.name} 短期初日", info)
     lines.append("END:VCALENDAR")
     return "\r\n".join(lines) + "\r\n"

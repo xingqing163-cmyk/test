@@ -1,22 +1,22 @@
 """実績記録（executed.csv）から、確定申告用の年間メモを作る。
 
-一般的な取扱い:
-- 株主優待は「雑所得（その他）」。収入金額は受け取った時点の時価（金券は額面など）。
+一般的な取扱い（2026年9月時点の税制。2026年分の申告を想定）:
+- 株主優待は「雑所得（その他）」。収入金額は受け取った時点の時価（所得税法36条2項。金券は額面など）。
 - 貸株料・逆日歩・信用取引の手数料・配当落調整金は、信用取引の譲渡損益の計算に含まれ、
-  特定口座なら年間取引報告書に反映済み。優待の雑所得の経費として二重に差し引かない。
-判断に迷うもの（割引券の評価など）は税務署か税理士に確認すること。
+  特定口座なら年間取引報告書に反映される。優待の雑所得の経費として二重に差し引かない。
+判断に迷うもの（割引券の評価、時間をおいて売った場合の差額など）は税務署か税理士に確認すること。
 """
 
 from __future__ import annotations
 
-import csv
-import io
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .watchlist import _read_text, _to_number
+from .config import normalize_code
+from .watchlist import csv_rows, nfkc, read_text, to_number
 
 HEADER_ALIASES: Dict[str, str] = {
     "受取日": "received", "received": "received",
@@ -61,39 +61,61 @@ class Executed:
         return self.lending + self.gyakuhibu + self.commission
 
 
+def parse_date(text: str) -> date:
+    """2026-06-10 / 2026/6/10（Excel の保存形式）/ 2026年6月10日 を受け付ける。"""
+    t = nfkc(text)
+    m = re.fullmatch(r"(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?", t)
+    if not m:
+        raise ValueError(f"受取日が読めません: {text!r}（例: 2026-06-10 / 2026/6/10）")
+    return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
 def parse_executed(text: str, source: str = "executed") -> List[Executed]:
-    rows = [r for r in csv.reader(io.StringIO(text))
-            if any(c.strip() for c in r) and not r[0].lstrip().startswith("#")]
+    rows = csv_rows(text)
     if not rows:
         return []
-    header = [HEADER_ALIASES.get(h.strip(), h.strip()) for h in rows[0]]
-    for key in ("received", "code"):
+    header = [HEADER_ALIASES.get(nfkc(h), nfkc(h)) for h in rows[0][1]]
+    for key, label in (("received", "受取日"), ("code", "コード")):
         if key not in header:
-            raise ValueError(f"{source}: 必須の列がありません: {key}")
+            raise ValueError(f"{source}: 必須の列がありません: {label}")
     out = []
-    for i, row in enumerate(rows[1:], start=2):
+    for line_no, row in rows[1:]:
         rec = {header[j]: (row[j].strip() if j < len(row) else "") for j in range(len(header))}
 
         def num(key: str) -> int:
-            v = _to_number(rec.get(key, ""))
+            v = to_number(rec.get(key, ""))
             return int(round(v)) if v is not None else 0
 
         try:
-            sold = _to_number(rec.get("sold", ""))
+            sold = to_number(rec.get("sold", ""))
             out.append(Executed(
-                received=date.fromisoformat(rec["received"].replace("/", "-")),
-                code=rec["code"], name=rec.get("name", ""), benefit=rec.get("benefit", ""),
+                received=parse_date(rec["received"]),
+                code=normalize_code(rec["code"]), name=rec.get("name", ""), benefit=rec.get("benefit", ""),
                 value=num("value"), sold=int(round(sold)) if sold is not None else None,
                 lending=num("lending"), gyakuhibu=num("gyakuhibu"), commission=num("commission"),
                 dividend=num("dividend"), adjustment=num("adjustment"), memo=rec.get("memo", ""),
             ))
         except ValueError as e:
-            raise ValueError(f"{source} {i}行目: {e}") from None
+            raise ValueError(f"{source} の {line_no}行目（Excelの行番号）: {e}") from None
     return out
 
 
 def load_executed(path: Path) -> List[Executed]:
-    return parse_executed(_read_text(Path(path)), source=str(path))
+    return parse_executed(read_text(Path(path)), source=str(path))
+
+
+def row_cautions(rows: List[Executed]) -> List[str]:
+    """行ごとの見直しポイント。"""
+    notes = []
+    for r in rows:
+        if r.income <= 0:
+            notes.append(f"{r.received.isoformat()} {r.code}: 評価額も売却額も0円です。受け取った時の時価を入れてください")
+        elif r.sold is not None and r.value and r.sold != r.value:
+            notes.append(
+                f"{r.received.isoformat()} {r.code}: 売却額と評価額に{abs(r.sold - r.value):,}円の差があります。"
+                "受取直後に売ったなら評価額を売却額に合わせてください。時間をおいて売った差額の扱いは税理士に確認"
+            )
+    return notes
 
 
 def tax_memo(records: List[Executed], year: int) -> str:
@@ -121,23 +143,27 @@ def tax_memo(records: List[Executed], year: int) -> str:
         "",
         f"- 優待の件数: {len(rows)}件",
         f"- **雑所得（その他）の収入金額: {income:,}円** ← 確定申告書の「雑所得・その他」に記入",
-        "- 必要経費: 0円（クロス費用は下記のとおり株式の譲渡損益側で処理済みのため）",
+        "- 必要経費: 0円として集計（クロス費用は株式の譲渡損益側で処理済みとする一般的な考え方。"
+        "個別の扱いは税務署・税理士に確認）",
         f"- 参考）クロス費用（貸株料・逆日歩・手数料）合計: {cross_cost:,}円"
-        " → 特定口座の年間取引報告書の譲渡損益に反映済み",
+        "（優待の受取日で集計した参考値。年間取引報告書は受渡日の年で集計されるので一致しないことがある）",
         f"- 参考）受取配当(税引前) {dividend:,}円 ／ 支払った配当落調整金 {adjustment:,}円"
-        " → 特定口座(源泉徴収あり)＋株式数比例配分方式なら口座内で自動的に損益通算",
+        " → 特定口座(源泉徴収あり)＋株式数比例配分方式＋特定口座への配当受入なら、同じ年・同じ口座の中で自動的に損益通算",
     ]
     if sold_total:
-        lines.append(f"- 参考）優待品・優待券の売却額合計: {sold_total:,}円"
-                     "（評価額と大きく違う場合の扱いは税理士に確認）")
+        lines.append(f"- 参考）優待品・優待券の売却額合計: {sold_total:,}円")
+    cautions = row_cautions(rows)
+    if cautions:
+        lines += ["", "## 見直してほしい行", ""] + [f"- {c}" for c in cautions]
     lines += [
         "",
         "## メモ",
         "",
-        "- 「給与以外の所得が20万円以下なら申告不要」は、確定申告をしない会社員向けの特例。"
+        "- 「給与以外の所得が20万円以下なら申告不要」は、確定申告をしない会社員向けの特例（所得で判定）。"
         "せどり等で確定申告をするなら、優待の雑所得も金額にかかわらず含める。住民税にはこの特例がない。",
-        "- 優待品・優待券は、せどりの仕入・売上とは混ぜずに別管理する（事業の帳簿には載せない）。",
-        "- 事業用の口座から証券口座に入金した場合は、会計ソフトでは「事業主貸」で処理する。",
+        "- 優待品・優待券は、せどりの仕入・売上とは混ぜずに別管理する（事業の帳簿には載せない。"
+        "売っても通常は事業の売上・消費税の課税売上にならない）。",
+        "- 事業用の口座から証券口座に入金したら「事業主貸」、証券口座から事業用の口座に戻したら「事業主借」で処理する。",
         "- この集計は目安です。最終判断は税務署・税理士に確認してください。",
         "",
     ]

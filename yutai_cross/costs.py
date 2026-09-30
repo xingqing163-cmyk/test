@@ -13,10 +13,11 @@ from .jpx_calendar import MarketCalendar, RightsDates
 from .watchlist import WatchItem
 
 # 日証金「最高料率早見表」は株価帯ごとに 1株1日あたりの上限を定めており、
-# 帯の上限株価のおよそ 0.2% になっている。ここではその近似を使う。
-# 正確な値は日証金の早見表で確認し、ウォッチリストの「逆日歩最悪」列で上書きすること。
+# 帯の上限株価のおよそ 0.2% になっている（100株単位では株価500円以下が最下位の帯で 1.0円）。
+# ここではその近似を使う。正確な値は日証金の早見表で確認し、
+# ウォッチリストの「逆日歩最悪」列で上書きすること。
 _MAX_RATE_BANDS = [
-    100, 200, 300, 500, 700,
+    500, 700,
     1_000, 1_500, 2_000, 3_000, 5_000, 7_000,
     10_000, 15_000, 20_000, 30_000, 50_000, 70_000,
     100_000, 150_000, 200_000, 300_000, 500_000,
@@ -80,7 +81,7 @@ class Quote:
     gyakuhibu_worst: int
     commissions: int
     dividend_cost: int
-    value: int            # 優待の評価額
+    value: int            # 優待の評価額（判定に使う価値）
     benefit_tax: int      # 優待（雑所得）にかかる税の目安
 
     @property
@@ -132,10 +133,11 @@ def quote(
     if method.is_seido:
         # 逆日歩は受渡日ベースの暦日数（週末・祝日をまたぐと日数が増える）
         g_days = (close_settle - open_settle).days
-        est = item.gyakuhibu_est or 0.0
         worst_rate = item.gyakuhibu_worst
         if worst_rate is None:
             worst_rate = approx_max_gyakuhibu(px) * settings.seido_worst_multiplier
+        # 想定値が未入力なら 0円ではなく上限の見積もりを使う（楽観的に見積もらない）
+        est = item.gyakuhibu_est if item.gyakuhibu_est is not None else worst_rate
         g_exp = math.floor(est * item.shares * g_days)
         g_worst = max(g_exp, math.floor(worst_rate * item.shares * g_days))
 
@@ -156,5 +158,6 @@ def quote(
             item.dividend, item.shares, method.adj_rate, settings.dividend_tax_recovered
         ),
         value=value,
-        benefit_tax=math.floor(value * settings.benefit_tax_rate),
+        # 税は受取時の時価にかかるので、評価額と時価（優待価値・換金価値の大きい方）の大きい方で見積もる
+        benefit_tax=math.floor(max(value, item.tax_base) * settings.benefit_tax_rate),
     )

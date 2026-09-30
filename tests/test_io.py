@@ -28,7 +28,7 @@ class WatchlistTest(unittest.TestCase):
         )
         it = parse_watchlist(text)[0]
         self.assertEqual(it.record_months, [5, 11])
-        self.assertEqual(it.record_day, "20日")
+        self.assertEqual(it.record_day, "20")
         self.assertEqual(it.shares, 200)
         self.assertEqual(it.price, 1500)
         self.assertEqual(it.dividend, 12.5)
@@ -109,8 +109,9 @@ class ReportTest(unittest.TestCase):
 
     def test_console(self):
         text = render_console(self.result, self.settings, self.cal)
-        self.assertIn("おすすめ候補", text)
-        self.assertIn("短期解禁", text)
+        self.assertIn("条件を満たす候補", text)
+        self.assertIn("短期初日", text)
+        self.assertIn("売買を勧めるものではありません", text)
         self.assertIn("見送り", text)
 
     def test_markdown(self):
@@ -135,7 +136,7 @@ class TaxTest(unittest.TestCase):
     def test_memo(self):
         text = (EXAMPLES / "executed_sample.csv").read_text(encoding="utf-8")
         memo = tax_memo(parse_executed(text), 2026)
-        self.assertIn("雑所得（その他）の収入金額: 7,500円", memo)
+        self.assertIn("雑所得（その他）の収入金額: 8,400円", memo)
         self.assertIn("合計: 599円", memo)
         self.assertIn("売却額合計: 2,400円", memo)
 

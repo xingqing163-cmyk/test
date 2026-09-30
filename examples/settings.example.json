@@ -17,41 +17,42 @@
   "max_lookback_business_days": 10,
   "_max_lookback_business_days": "無期限の一般信用で、権利付最終日の何営業日前まで先回りを検討するか",
   "dividend_tax_recovered": true,
-  "_dividend_tax_recovered": "特定口座(源泉徴収あり)＋配当金の受取方法が株式数比例配分方式なら true",
+  "_dividend_tax_recovered": "特定口座(源泉徴収あり)＋配当金の受取方法が株式数比例配分方式＋特定口座で配当を受け入れる設定なら true",
 
   "benefit_tax_rate": 0.0,
-  "_benefit_tax_rate": "優待(雑所得)にかかる税率の目安。例: 所得税20%＋住民税10%なら 0.3。0なら税引前で評価",
+  "_benefit_tax_rate": "優待(雑所得)にかかる税率の目安。例: 所得税20%（復興特別所得税込み20.42%）＋住民税10%なら 0.3042。0なら税引前で評価",
 
   "margin_rate": 0.30,
   "seido_risk_basis": "worst",
   "seido_worst_multiplier": 4.0,
-  "_seido": "制度信用は逆日歩の最悪ケース（最高料率×4倍）で判定する。慣れたら expected に変更可",
+  "_seido": "制度信用は逆日歩を最高料率×4倍で見積もって判定する（臨時措置で10倍もあり、上限ではない）。expected にする場合は全銘柄の「逆日歩想定」を入力すること（未入力なら4倍の見積もりを使う）",
 
   "settlement_days": 2,
   "extra_market_holidays": [],
   "_extra_market_holidays": "臨時休場日などを YYYY-MM-DD で追加",
 
   "exclude_codes": [],
-  "_exclude_codes": "勤務先・取引先・グループ会社など、社内規程やインサイダー規制で売買しない銘柄コード",
+  "_exclude_codes": "勤務先・取引先・グループ会社など、社内規程やインサイダー規制で売買しない銘柄コード（入力ミス防止の補助。実際の値は mydata/settings.json にだけ書く）",
 
   "include_long_term": false,
-  "_include_long_term": "長期保有条件のある銘柄も推奨に含めるか（継続クロスで株主番号をつなぐ上級者向け）",
+  "_include_long_term": "長期保有条件のある銘柄も候補に含めるか（継続クロスで株主番号をつなぐ上級者向け）",
 
+  "_methods": "証券会社ごとの売建方法。max_hold_days は返済期限の日数、hold_basis はその数え方（business=営業日: SBI証券15営業日 / calendar=暦日: 楽天証券14日）。2026年9月時点の例なので最新の条件に更新して使う",
   "methods": [
     {"id": "sbi_short", "broker": "SBI", "label": "SBI証券 一般信用(短期)", "kind": "ippan",
-     "lending_rate": 0.039, "max_hold_business_days": 15, "day_count": "both",
+     "lending_rate": 0.039, "max_hold_days": 15, "hold_basis": "business", "day_count": "both",
      "commission_buy": 0, "commission_short": 0, "enabled": true},
     {"id": "sbi_long", "broker": "SBI", "label": "SBI証券 一般信用(無期限)", "kind": "ippan",
-     "lending_rate": 0.011, "max_hold_business_days": null, "day_count": "both",
+     "lending_rate": 0.011, "max_hold_days": null, "day_count": "both",
      "commission_buy": 0, "commission_short": 0, "enabled": true},
     {"id": "rakuten_short", "broker": "楽天", "label": "楽天証券 一般信用(短期)", "kind": "ippan",
-     "lending_rate": 0.039, "max_hold_business_days": 14, "day_count": "both",
+     "lending_rate": 0.039, "max_hold_days": 14, "hold_basis": "calendar", "day_count": "both",
      "commission_buy": 0, "commission_short": 0, "enabled": true},
     {"id": "rakuten_long", "broker": "楽天", "label": "楽天証券 一般信用(無期限)", "kind": "ippan",
-     "lending_rate": 0.011, "max_hold_business_days": null, "day_count": "both",
+     "lending_rate": 0.011, "max_hold_days": null, "day_count": "both",
      "commission_buy": 0, "commission_short": 0, "enabled": true},
     {"id": "seido", "broker": "制度", "label": "制度信用（逆日歩リスクあり）", "kind": "seido",
-     "lending_rate": 0.0115, "max_hold_business_days": null, "day_count": "both",
+     "lending_rate": 0.0115, "max_hold_days": null, "day_count": "both",
      "commission_buy": 0, "commission_short": 0, "enabled": true}
   ]
 }

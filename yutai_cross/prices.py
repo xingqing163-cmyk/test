@@ -1,13 +1,16 @@
-"""株価の取得（任意機能）。
+"""株価の取得（任意機能・既定ではオフ）。
 
-Yahoo! Finance のチャートAPI（非公式）から直近の株価を取る。仕様変更や
-アクセス制限で取れないことがあるので、その場合はウォッチリストの「株価」列か
---prices で渡す CSV の値を使う。貸株料の計算に使うだけなので、
-数%ずれていても判定への影響は小さい。
+米Yahoo Finance のチャートAPI（公式に提供されたAPIではない非公開のエンドポイント）から
+直近の株価を取る。利用規約上、自動取得が認められていない可能性があるので、
+使う場合は個人の確認用途に限り、取得したデータを再配布しないこと。
+おすすめは、証券会社からダウンロードした「コード,株価」の CSV を --prices で渡す方法。
+仕様変更やアクセス制限で取れないことがあり、その場合はウォッチリストの「株価」列を使う。
+貸株料の計算に使うだけなので、数%ずれていても判定への影響は小さい。
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -15,7 +18,7 @@ import urllib.request
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d"
-USER_AGENT = "Mozilla/5.0 (yutai-cross-planner)"
+USER_AGENT = "yutai-cross-planner/0.1 (personal use)"
 
 Fetcher = Callable[[str], bytes]
 
@@ -54,7 +57,8 @@ def fetch_prices(
         url = YAHOO_CHART_URL.format(symbol=f"{code}.T")
         try:
             price = parse_yahoo_chart(fetch(url))
-        except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError) as e:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError,
+                KeyError, IndexError, TypeError, AttributeError) as e:
             errors.append(f"{code}: 株価を取得できませんでした（{e}）")
             continue
         if price is None:

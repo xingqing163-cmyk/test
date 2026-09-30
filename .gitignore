@@ -5,3 +5,11 @@ __pycache__/
 *.pyc
 *.egg-info/
 .venv/
+
+# ツールの出力（mydata/ の外に出した場合も公開しない）
+plan_*.md
+plan_*.csv
+yutai_cross.ics
+tax_*.md
+today.txt
+prices*.csv

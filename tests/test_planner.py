@@ -118,7 +118,7 @@ class ActionsTest(unittest.TestCase):
         return [(a.kind, a.plan.item.code) for a in actions_on(day, r)]
 
     def test_short_open_day(self):
-        self.assertIn(("短期解禁", "X001"), self.kinds(date(2026, 10, 7), date(2026, 10, 6)))
+        self.assertIn(("短期初日", "X001"), self.kinds(date(2026, 10, 7), date(2026, 10, 6)))
 
     def test_last_day_and_ex_date(self):
         self.assertIn(("最終日", "X001"), self.kinds(date(2026, 10, 28), date(2026, 10, 28)))
@@ -132,8 +132,11 @@ class ActionsTest(unittest.TestCase):
         self.assertEqual(r.settling[0].phase, "本日現渡し")
 
     def test_entry_period_shown_for_next_day(self):
-        r = build_plan(self.items, date(2026, 10, 8), Settings())
-        acts = [a for a in actions_on(date(2026, 10, 9), r) if a.kind == "エントリー"]
+        # X002（人気 中）は 10/16 にはエントリー目安日に入っている
+        r = build_plan(self.items, date(2026, 10, 16), Settings())
+        x002 = next(p for p in r.plans if p.item.code == "X002")
+        self.assertEqual(x002.recommended.entry_date, date(2026, 10, 16))
+        acts = [a for a in actions_on(date(2026, 10, 19), r) if a.kind == "エントリー"]
         self.assertEqual([a.plan.item.code for a in acts], ["X002"])
         self.assertIn("エントリー期間中", acts[0].text)
 
