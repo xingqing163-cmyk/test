@@ -115,7 +115,7 @@ class ActionsTest(unittest.TestCase):
 
     def kinds(self, day, today):
         r = build_plan(self.items, today, Settings())
-        return [(a.kind, a.plan.item.code) for a in actions_on(day, r)]
+        return [(a.kind, a.code) for a in actions_on(day, r)]
 
     def test_short_open_day(self):
         self.assertIn(("短期初日", "X001"), self.kinds(date(2026, 10, 7), date(2026, 10, 6)))
@@ -137,7 +137,7 @@ class ActionsTest(unittest.TestCase):
         x002 = next(p for p in r.plans if p.item.code == "X002")
         self.assertEqual(x002.recommended.entry_date, date(2026, 10, 16))
         acts = [a for a in actions_on(date(2026, 10, 19), r) if a.kind == "エントリー"]
-        self.assertEqual([a.plan.item.code for a in acts], ["X002"])
+        self.assertEqual([a.code for a in acts], ["X002"])
         self.assertIn("エントリー期間中", acts[0].text)
 
 
@@ -145,9 +145,9 @@ class PeakCapitalTest(unittest.TestCase):
     def test_overlapping_positions(self):
         items = [item(code="A"), item(code="B", record_months=[11])]
         r = build_plan(items, date(2026, 10, 1), Settings(horizon_days=90))
-        peak, day = peak_capital(r.plans)
-        cap = r.plans[0].capital
-        self.assertEqual(peak, cap)  # 10月分と11月分は期間が重ならない
+        peak, day = peak_capital(r)
+        # 10月分と11月分は期間が重ならないので、1銘柄分（現物代金＋最低保証金30万円）
+        self.assertEqual(peak, round(r.plans[0].notional) + 300_000)
         self.assertIsNotNone(day)
 
 

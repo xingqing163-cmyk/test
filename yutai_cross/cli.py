@@ -4,24 +4,52 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .config import load_settings
+from .config import Settings, normalize_code, load_settings
 from .costs import quote
-from .jpx_calendar import MarketCalendar, fmt_date
-from .planner import actions_on, build_plan, next_action_day, plan_method, short_window_start
+from .jpx_calendar import MarketCalendar, RightsDates, fmt_date, record_date_for
+from .planner import (
+    actions_on,
+    build_plan,
+    method_by_id,
+    methods_for,
+    next_action_day,
+    plan_method,
+    position_alerts,
+    short_due_date,
+    short_window_start,
+    unknown_brokers,
+    upcoming_rights,
+)
+from .positions import (
+    STATUS_CLOSED,
+    STATUS_OPEN,
+    STATUS_RECEIVED,
+    Position,
+    find_position,
+    load_positions,
+    next_id,
+    save_positions,
+)
 from .prices import fetch_prices
 from .report import cost_breakdown, render_console, render_csv, render_ics, render_markdown
+from .tax import HEADER_ALIASES as EXECUTED_ALIASES
 from .tax import load_executed, tax_memo
-from .watchlist import WatchItem, load_price_csv, load_watchlist, read_text
+from .watchlist import WatchItem, csv_rows, load_price_csv, load_watchlist, nfkc, read_text
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DIR = Path("mydata")
 DEFAULT_WATCHLIST = DEFAULT_DIR / "watchlist.csv"
 DEFAULT_CONFIG = DEFAULT_DIR / "settings.json"
+DEFAULT_POSITIONS = DEFAULT_DIR / "positions.csv"
+DEFAULT_EXECUTED = DEFAULT_DIR / "executed.csv"
+EXECUTED_HEADERS = ["受取日", "コード", "銘柄名", "優待内容", "評価額", "売却額", "貸株料", "逆日歩",
+                    "手数料", "受取配当(税引前)", "配当落調整金", "メモ"]
 
 
 def _examples_dir() -> Path:
@@ -58,6 +86,8 @@ def _load_common(args: argparse.Namespace):
     settings = load_settings(config_path)
     if getattr(args, "horizon", None) is not None:
         settings.horizon_days = args.horizon
+    if getattr(args, "budget", None) is not None:
+        settings.capital_budget_yen = args.budget
     cal = MarketCalendar(settings.extra_market_holidays, settings.settlement_days)
     return settings, cal
 
@@ -82,7 +112,8 @@ def _build(args: argparse.Namespace):
         for e in errors:
             print(f"[株価取得] {e}（ウォッチリストの株価を使います）", file=sys.stderr)
     today = args.today or date.today()
-    result = build_plan(items, today, settings, prices, cal)
+    positions = load_positions(args.positions)
+    result = build_plan(items, today, settings, prices, cal, positions)
     return settings, cal, result
 
 
@@ -110,6 +141,13 @@ def cmd_today(args: argparse.Namespace) -> int:
     today = result.today
     nxt = cal.next_business_day(today)
     found = False
+    rates = settings.rates_warning(today)
+    alerts = position_alerts(result)
+    if rates or alerts:
+        print("■ 先に確認してください")
+        for line in ([rates] if rates else []) + alerts:
+            print(f"  - {line}")
+        found = bool(alerts)
     for d in ([today] if cal.is_business_day(today) else []) + [nxt]:
         acts = actions_on(d, result)
         if d == today:
@@ -126,7 +164,7 @@ def cmd_today(args: argparse.Namespace) -> int:
         if upcoming:
             day, acts = upcoming
             first = acts[0]
-            print(f"■ 次の予定: {fmt_date(day)} [{first.kind}] {first.plan.item.code} {first.plan.item.name}"
+            print(f"■ 次の予定: {fmt_date(day)} [{first.kind}] {first.code} {first.name}"
                   "（その前営業日の夜に today をもう一度実行）")
         else:
             print("■ 当面の予定はありません（ウォッチリストに銘柄を追加してください）")
@@ -236,6 +274,280 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- 建玉の記録 ----------
+
+def _watch_item(args: argparse.Namespace, code: str) -> Optional[WatchItem]:
+    path: Path = args.watchlist
+    if not path.exists():
+        return None
+    return next((i for i in load_watchlist(path) if i.code == code), None)
+
+
+def _position_quote(pos: Position, item: Optional[WatchItem], settings: Settings, cal: MarketCalendar):
+    m = method_by_id(settings, pos.method_id)
+    if m is None:
+        return None
+    probe = WatchItem(
+        code=pos.code, name=pos.name, record_months=[pos.record_date.month], shares=pos.shares,
+        price=pos.price, benefit_value=item.benefit_value if item else 0,
+        dividend=item.dividend if item else 0.0, taishaku=True,
+    )
+    rd = cal.rights_dates(pos.record_date)
+    return quote(probe, rd, m, min(pos.entry_date, rd.last_cum_date), cal, settings)
+
+
+def cmd_position_add(args: argparse.Namespace) -> int:
+    settings, cal = _load_common(args)
+    positions = load_positions(args.positions)
+    code = normalize_code(args.code)
+    item = _watch_item(args, code)
+    m = method_by_id(settings, args.method)
+    if m is None:
+        sys.exit(f"--method は次から選んでください: {', '.join(x.id for x in settings.methods)}")
+    entry = args.date or date.today()
+    if not cal.is_business_day(entry):
+        sys.exit(f"建日 {fmt_date(entry)} は休場日です。約定した日を --date で指定してください")
+    if args.record:
+        rd = cal.rights_dates(args.record)
+    elif item is not None:
+        upcoming = [r for r in upcoming_rights(item, entry, cal) if r.last_cum_date >= entry]
+        if not upcoming:
+            sys.exit(f"{code} の次の権利日が見つかりません。--record で権利確定日を指定してください")
+        rd = upcoming[0]
+    else:
+        sys.exit(f"{code} はウォッチリストにありません。--record で権利確定日を指定してください")
+    if entry > rd.last_cum_date:
+        sys.exit(f"建日 {fmt_date(entry)} は権利付最終日 {fmt_date(rd.last_cum_date)} より後です。"
+                 "この回の権利は取れません")
+    if m.is_short_term and entry < short_window_start(cal, rd.ex_date, m):
+        sys.exit(f"{m.label} で {fmt_date(entry)} に建てると、返済期日が権利落ち日より前になります")
+    price = args.price if args.price is not None else (item.price if item else None)
+    if price is None or price <= 0:
+        sys.exit("約定単価を --price で指定してください")
+    shares = args.shares or (item.shares if item else 100)
+    dup = [p for p in positions
+           if p.code == code and p.record_date == rd.record_date and p.status == STATUS_OPEN]
+    if dup and not args.force:
+        sys.exit(f"{code} の同じ権利日の建玉がすでにあります（#{dup[0].id}）。別に建てたなら --force を付けてください")
+    pos = Position(
+        id=next_id(positions), code=code, name=item.name if item else code, record_date=rd.record_date,
+        method_id=m.id, entry_date=entry, shares=shares, price=price, memo=args.memo or "",
+    )
+    positions.append(pos)
+    save_positions(args.positions, positions)
+    q = _position_quote(pos, item, settings, cal)
+    due = short_due_date(cal, entry, m) if m.is_short_term else None
+    print(f"記録しました: {pos.label}（{m.label}・{shares:,}株・{price:,.0f}円）")
+    print(f"  権利付最終日: {fmt_date(rd.last_cum_date)} ／ 現渡し: {fmt_date(rd.ex_date)}"
+          + (f" ／ 返済期日: {fmt_date(due)}" if due else ""))
+    if q is not None:
+        print(f"  見込みコスト: {cost_breakdown(q)}")
+    print(f"  ファイル: {args.positions}")
+    return 0
+
+
+def cmd_position_close(args: argparse.Namespace) -> int:
+    settings, cal = _load_common(args)
+    positions = load_positions(args.positions)
+    pos = find_position(positions, args.key, [STATUS_OPEN])
+    day = args.date or date.today()
+    rd = cal.rights_dates(pos.record_date)
+    if day <= rd.last_cum_date and not args.force:
+        sys.exit(f"{fmt_date(day)} は権利付最終日（{fmt_date(rd.last_cum_date)}）以前です。この日に現渡しすると"
+                 "権利がなくなります。本当に現渡ししたなら --force を付けてください")
+    pos.status, pos.close_date = STATUS_CLOSED, day
+    save_positions(args.positions, positions)
+    print(f"現渡しを記録しました: {pos.label}（{fmt_date(day)}）")
+    m = method_by_id(settings, pos.method_id)
+    if m is not None and m.is_short_term and day > short_due_date(cal, pos.entry_date, m):
+        print("  ※返済期日を過ぎています。強制決済になっていないか証券会社の画面で確認してください")
+    print(f"  優待は権利確定日（{rd.record_date.isoformat()}）の2〜3か月後に届くのが一般的です。"
+          f"届いたら position received {pos.id} --value 評価額（円）")
+    return 0
+
+
+def _append_executed(path: Path, row: Dict[str, str]) -> None:
+    """実績ファイルに1行追記する（既存の見出しの順番に合わせる）。"""
+    text = read_text(path) if path.exists() else ""
+    rows = csv_rows(text) if text.strip() else []
+    if rows:
+        header = rows[0][1]
+        body = text if text.endswith("\n") else text + "\n"
+    else:
+        header = EXECUTED_HEADERS
+        body = ",".join(EXECUTED_HEADERS) + "\n"
+    values = [row.get(EXECUTED_ALIASES.get(nfkc(h), nfkc(h)), "") for h in header]
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerow(values)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body.lstrip("﻿") + buf.getvalue(), encoding="utf-8-sig")
+
+
+def cmd_position_received(args: argparse.Namespace) -> int:
+    settings, cal = _load_common(args)
+    positions = load_positions(args.positions)
+    pos = find_position(positions, args.key, [STATUS_CLOSED, STATUS_OPEN])
+    if pos.status == STATUS_OPEN:
+        print("※この建玉はまだ「保有中」です。現渡しが済んでいれば position close も実行してください",
+              file=sys.stderr)
+    item = _watch_item(args, pos.code)
+    q = _position_quote(pos, item, settings, cal)
+    m = method_by_id(settings, pos.method_id)
+    dividend_total = round((item.dividend if item else 0.0) * pos.shares)
+    adjustment = round(dividend_total * (m.adj_rate if m else 1.0))
+    day = args.date or date.today()
+    _append_executed(args.executed, {
+        "received": day.isoformat(), "code": pos.code, "name": pos.name,
+        "benefit": args.benefit or (item.benefit if item else ""), "value": str(args.value),
+        "sold": "" if args.sold is None else str(args.sold),
+        "lending": str(q.lending_fee) if q else "", "gyakuhibu": "",
+        "commission": str(q.commissions) if q else "",
+        "dividend": str(dividend_total) if dividend_total else "",
+        "adjustment": str(adjustment) if dividend_total else "",
+        "memo": f"建玉#{pos.id}から記録（貸株料・配当は見込み値）",
+    })
+    pos.status, pos.received_date = STATUS_RECEIVED, day
+    save_positions(args.positions, positions)
+    print(f"{args.executed} に追記しました: {pos.code} {pos.name} 評価額 {args.value:,}円")
+    print("  貸株料・配当・配当落調整金は見込み値です。証券会社の取引報告書の実際の値で直してください")
+    return 0
+
+
+def cmd_position_list(args: argparse.Namespace) -> int:
+    settings, cal = _load_common(args)
+    positions = load_positions(args.positions)
+    shown = [p for p in positions if args.all or p.status != STATUS_RECEIVED]
+    if not shown:
+        print("記録された建玉はありません（クロスしたら position add で記録します）")
+        return 0
+    for p in shown:
+        rd = cal.rights_dates(p.record_date)
+        m = method_by_id(settings, p.method_id)
+        due = short_due_date(cal, p.entry_date, m) if m is not None and m.is_short_term else None
+        line = (f"#{p.id} {p.code} {p.name} ［{p.status}］ {m.label if m else p.method_id}・{p.shares:,}株・"
+                f"{fmt_date(p.entry_date)}建て ／ 権利付最終日 {fmt_date(rd.last_cum_date)}")
+        if p.status == STATUS_OPEN:
+            line += f" ／ 現渡し {fmt_date(rd.ex_date)}" + (f" ／ 返済期日 {fmt_date(due)}" if due else "")
+        elif p.status == STATUS_CLOSED:
+            line += f" ／ {fmt_date(p.close_date)} 現渡し済・優待待ち"
+        else:
+            line += f" ／ {fmt_date(p.received_date)} 優待受取"
+        print(line)
+    return 0
+
+
+# ---------- 入力チェック・カレンダー ----------
+
+def cmd_check(args: argparse.Namespace) -> int:
+    settings, cal = _load_common(args)
+    today = args.today or date.today()
+    problems = 0
+    print("■ 設定")
+    checked = settings.rates_checked_on.isoformat() if settings.rates_checked_on else "未入力"
+    print(f"  料率を確認した日: {checked}")
+    rates = settings.rates_warning(today)
+    if rates:
+        print(f"  ！ {rates}")
+    for m in settings.methods:
+        state = "" if m.enabled else "（無効）"
+        print(f"  - {m.id}: {m.label}{state} 貸株料 年{m.lending_rate:.2%} ／ {m.term_label}")
+    if settings.capital_budget_yen:
+        print(f"  資金枠: {settings.capital_budget_yen:,}円")
+    if not args.watchlist.exists():
+        sys.exit(f"ウォッチリストが見つかりません: {args.watchlist}")
+    row_errors: List[str] = []
+    items = load_watchlist(args.watchlist, errors=row_errors)
+    if row_errors:
+        print("\n■ 読み込めなかった行（直すまでこの銘柄は計算されません）")
+        for e in row_errors:
+            print(f"  ！ {e}")
+        problems += len(row_errors)
+    print(f"\n■ ウォッチリスト（{args.watchlist}・{len(items)}銘柄）")
+    excluded = set(settings.exclude_codes)
+    for it in items:
+        issues = list(it.notes)
+        unknown = unknown_brokers(it, settings)
+        if unknown:
+            issues.append(f"「一般信用」列の {'、'.join(unknown)} を読めません")
+        methods = methods_for(it, settings)
+        if not methods:
+            issues.append("売建できる方法がありません（一般信用の列と貸借の列を確認）")
+        if it.price is None and not args.prices:
+            issues.append("株価が空です（--prices で渡すならこのままでOK）")
+        notes = []
+        if it.code in excluded:
+            notes.append("除外リストに入っています")
+        if it.long_term:
+            notes.append("長期保有条件あり（初期設定では見送り）")
+        if not it.enabled:
+            notes.append("無効（×）")
+        nxt = upcoming_rights(it, today, cal)
+        when = fmt_date(nxt[0].last_cum_date) if nxt else "-"
+        mark = "要確認" if issues else "OK"
+        problems += bool(issues)
+        print(f"  [{mark}] {it.line_no}行目 {it.code} {it.name}: 次の権利付最終日 {when} ／ "
+              f"方法 {', '.join(m.id for m in methods) or 'なし'}")
+        for x in issues:
+            print(f"      ！ {x}")
+        for x in notes:
+            print(f"      ・{x}")
+    positions = load_positions(args.positions)
+    if positions:
+        print(f"\n■ 建玉の記録（{args.positions}）: 保有中 "
+              f"{sum(p.status == STATUS_OPEN for p in positions)}件 ／ 優待待ち "
+              f"{sum(p.status == STATUS_CLOSED for p in positions)}件")
+    print(f"\n要確認: {problems}件" if problems else "\n問題は見つかりませんでした")
+    return 1 if problems else 0
+
+
+def _month_range(start: date, months: int):
+    y, m = start.year, start.month
+    for _ in range(months):
+        yield y, m
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+
+
+def cmd_calendar(args: argparse.Namespace) -> int:
+    settings, cal = _load_common(args)
+    start = args.start or date.today().replace(day=1)
+    shorts = [m for m in settings.enabled_methods() if m.is_short_term]
+    head = "| 権利付最終日 | 権利落ち日 | 権利確定日 | 銘柄 | " + " | ".join(
+        f"{m.broker}短期初日" for m in shorts) + " |"
+    sep = "|" + "---|" * (4 + len(shorts))
+
+    def row(rd: RightsDates, label: str) -> str:
+        cells = [fmt_date(short_window_start(cal, rd.ex_date, m)) for m in shorts]
+        return (f"| **{fmt_date(rd.last_cum_date)}** | {fmt_date(rd.ex_date)} | {fmt_date(rd.record_date)} | "
+                f"{label} | " + " | ".join(cells) + " |")
+
+    lines = [head, sep]
+    if not args.month_end and args.watchlist.exists():
+        events = []
+        for it in load_watchlist(args.watchlist):
+            if not it.enabled:
+                continue
+            for y, m in _month_range(start, args.months):
+                if m in it.record_months:
+                    rd = cal.rights_dates(record_date_for(y, m, it.record_day))
+                    events.append((rd, f"{it.code} {it.name}"))
+        for rd, label in sorted(events, key=lambda e: (e[0].last_cum_date, e[1])):
+            lines.append(row(rd, label))
+        title = f"ウォッチリストの権利日（{start.year}年{start.month}月から{args.months}か月）"
+    else:
+        for y, m in _month_range(start, args.months):
+            lines.append(row(cal.rights_dates(record_date_for(y, m, "末")), "（月末権利）"))
+        title = f"月末権利の日程（{start.year}年{start.month}月から{args.months}か月）"
+    text = f"# {title}\n\n" + "\n".join(lines) + "\n"
+    print(text)
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(text, encoding="utf-8")
+        print(f"出力しました: {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m yutai_cross",
@@ -254,6 +566,10 @@ def build_parser() -> argparse.ArgumentParser:
                             help="「コード,株価」のCSVで株価を上書き（証券会社からダウンロードしたものなど）")
             sp.add_argument("--fetch-prices", action="store_true",
                             help="米Yahoo Financeの非公開APIから株価を取得（任意・利用規約に注意）")
+            sp.add_argument("--positions", type=Path, default=DEFAULT_POSITIONS,
+                            help="建玉の記録（既定: mydata/positions.csv）")
+            sp.add_argument("--budget", type=_nonneg_int,
+                            help="優待クロスに使える資金の上限（円）。超える分は利回りの低い候補から見送る")
 
     sp = sub.add_parser("plan", help="候補の一覧と売買スケジュールを出す")
     common(sp)
@@ -281,6 +597,60 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--method", default="sbi_short", help="売建方法のid（既定 sbi_short）")
     sp.add_argument("--entry", type=_date, help="クロスする日（既定: 権利付最終日）")
     sp.set_defaults(func=cmd_cost)
+
+    sp = sub.add_parser("position", help="建玉の記録（クロスしたら add、現渡ししたら close、優待が届いたら received）")
+    psub = sp.add_subparsers(dest="position_command", required=True)
+
+    def pos_common(x: argparse.ArgumentParser) -> None:
+        x.add_argument("-c", "--config", type=Path, help="設定JSON")
+        x.add_argument("-w", "--watchlist", type=Path, default=DEFAULT_WATCHLIST, help="ウォッチリストCSV")
+        x.add_argument("--positions", type=Path, default=DEFAULT_POSITIONS, help="建玉の記録CSV")
+
+    x = psub.add_parser("add", help="クロスした建玉を記録")
+    pos_common(x)
+    x.add_argument("code", help="銘柄コード")
+    x.add_argument("--method", required=True, help="売建方法のid（例: sbi_short, rakuten_short）")
+    x.add_argument("--date", type=_date, help="約定日（既定: 今日）")
+    x.add_argument("--price", type=float, help="約定単価（既定: ウォッチリストの株価）")
+    x.add_argument("--shares", type=int, help="株数（既定: ウォッチリストの必要株数）")
+    x.add_argument("--record", type=_date, help="権利確定日（既定: ウォッチリストから自動）")
+    x.add_argument("--memo", help="メモ")
+    x.add_argument("--force", action="store_true", help="同じ権利日の建玉があっても記録する")
+    x.set_defaults(func=cmd_position_add)
+
+    x = psub.add_parser("close", help="現渡しした建玉を記録")
+    pos_common(x)
+    x.add_argument("key", help="建玉のID（#なし）か銘柄コード")
+    x.add_argument("--date", type=_date, help="現渡しした日（既定: 今日）")
+    x.add_argument("--force", action="store_true", help="権利付最終日以前の日付でも記録する")
+    x.set_defaults(func=cmd_position_close)
+
+    x = psub.add_parser("received", help="優待が届いたら記録し、実績CSVに追記")
+    pos_common(x)
+    x.add_argument("key", help="建玉のID（#なし）か銘柄コード")
+    x.add_argument("--value", type=int, required=True, help="評価額（受け取った時の時価・円）")
+    x.add_argument("--sold", type=int, help="売却額（売った場合・円）")
+    x.add_argument("--benefit", help="優待内容（既定: ウォッチリストの優待内容）")
+    x.add_argument("--date", type=_date, help="受取日（既定: 今日）")
+    x.add_argument("--executed", type=Path, default=DEFAULT_EXECUTED, help="実績CSV")
+    x.set_defaults(func=cmd_position_received)
+
+    x = psub.add_parser("list", help="建玉の一覧（受取済みは --all で表示）")
+    pos_common(x)
+    x.add_argument("--all", action="store_true", help="受取済みも表示")
+    x.set_defaults(func=cmd_position_list)
+
+    sp = sub.add_parser("check", help="ウォッチリストと設定の入力チェック")
+    common(sp)
+    sp.set_defaults(func=cmd_check)
+
+    sp = sub.add_parser("calendar", help="権利付最終日・権利落ち日・短期初日の一覧（ウォッチリストまたは月末）")
+    common(sp)
+    sp.add_argument("--start", type=_date, help="開始日（既定: 今月1日）")
+    sp.add_argument("--months", type=_nonneg_int, default=12, help="何か月分（既定12）")
+    sp.add_argument("--month-end", action="store_true", help="ウォッチリストではなく月末権利の一覧を出す")
+    sp.add_argument("-o", "--out", type=Path, help="Markdownの出力先ファイル")
+    sp.set_defaults(func=cmd_calendar)
 
     sp = sub.add_parser("tax", help="実績CSVから確定申告用メモを作る")
     sp.add_argument("--executed", type=Path, default=DEFAULT_DIR / "executed.csv")

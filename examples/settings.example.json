@@ -37,6 +37,18 @@
   "include_long_term": false,
   "_include_long_term": "長期保有条件のある銘柄も候補に含めるか（継続クロスで株主番号をつなぐ上級者向け）",
 
+  "capital_budget_yen": 0,
+  "_capital_budget_yen": "優待クロスに使える資金の上限（円）。0 なら上限なし。超える分は利回りの低い候補から見送る。plan / today の --budget でも指定できる",
+  "min_margin_deposit_yen": 300000,
+  "_min_margin_deposit_yen": "信用口座に必要な委託保証金の最低額（円）。必要資金の計算に使う",
+
+  "auto_popularity": true,
+  "_auto_popularity": "「人気」列が空欄の銘柄を自動判定する（3月・9月の権利、または優待価値÷(株価×必要株数)が1%以上なら「高」、それ以外は「中」）",
+
+  "rates_checked_on": "2026-09-30",
+  "rates_stale_days": 90,
+  "_rates_checked_on": "methods の料率を証券会社のサイトで最後に確認した日。rates_stale_days 日たつと警告が出る。確認したら日付を更新する",
+
   "_methods": "証券会社ごとの売建方法。max_hold_days は返済期限の日数、hold_basis はその数え方（business=営業日: SBI証券15営業日 / calendar=暦日: 楽天証券14日）。2026年9月時点の例なので最新の条件に更新して使う",
   "methods": [
     {"id": "sbi_short", "broker": "SBI", "label": "SBI証券 一般信用(短期)", "kind": "ippan",

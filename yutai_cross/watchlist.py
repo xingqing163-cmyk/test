@@ -190,7 +190,9 @@ def read_text(path: Path) -> str:
     raise ValueError(f"{path}: 文字コードを判別できません（UTF-8 か Shift_JIS で保存してください）")
 
 
-def parse_watchlist(text: str, source: str = "watchlist") -> List[WatchItem]:
+def parse_watchlist(text: str, source: str = "watchlist",
+                    errors: Optional[List[str]] = None) -> List[WatchItem]:
+    """errors にリストを渡すと、読めない行で止まらずにエラーを集めて残りを読む（入力チェック用）。"""
     rows = csv_rows(text)
     if not rows:
         return []
@@ -208,7 +210,10 @@ def parse_watchlist(text: str, source: str = "watchlist") -> List[WatchItem]:
         try:
             items.append(_item_from_record(rec, line_no))
         except (ValueError, KeyError) as e:
-            raise ValueError(f"{source} の {line_no}行目（Excelの行番号）: {e}") from None
+            message = f"{source} の {line_no}行目（Excelの行番号）: {e}"
+            if errors is None:
+                raise ValueError(message) from None
+            errors.append(message)
     return items
 
 
@@ -258,8 +263,8 @@ def _item_from_record(rec: Dict[str, str], line_no: int) -> WatchItem:
     )
 
 
-def load_watchlist(path: Path) -> List[WatchItem]:
-    return parse_watchlist(read_text(Path(path)), source=str(path))
+def load_watchlist(path: Path, errors: Optional[List[str]] = None) -> List[WatchItem]:
+    return parse_watchlist(read_text(Path(path)), source=str(path), errors=errors)
 
 
 def load_price_csv(path: Path) -> Dict[str, float]:

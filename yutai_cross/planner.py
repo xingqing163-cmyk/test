@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 from .config import BASIS_CALENDAR, Settings, ShortMethod
 from .costs import Quote, quote
 from .jpx_calendar import MarketCalendar, RightsDates, fmt_date, record_date_for
+from .positions import STATUS_CLOSED, STATUS_OPEN, Position
 from .watchlist import WatchItem
 
 COMMON_INVENTORY_WARNING = "一般信用の売り在庫は証券会社の画面で要確認（在庫がないと注文不可）"
@@ -36,6 +37,12 @@ class EventPlan:
     phase: str
     capital: int                  # 必要資金の目安（現物代金＋委託保証金）
     warnings: List[str] = field(default_factory=list)
+    notional: float = 0.0         # 約定代金（株価×株数）
+    popularity: str = ""          # 判定に使った人気（自動判定を含む）
+    popularity_auto: bool = False
+    viable: bool = False          # 最終日にクロスすれば最低利益を満たすか（今日の日付に関係なく）
+    position: Optional[Position] = None  # 建玉の記録（保有中）
+    excluded_reason: str = ""     # 資金枠などで見送りにした理由
 
     @property
     def shown(self) -> Optional[MethodPlan]:
@@ -43,7 +50,13 @@ class EventPlan:
 
     @property
     def recommended(self) -> Optional[Quote]:
-        return self.best.recommended if self.best else None
+        if self.best is None or self.excluded_reason:
+            return None
+        return self.best.recommended
+
+    @property
+    def crossed(self) -> bool:
+        return self.item.crossed or self.position is not None
 
     @property
     def alternatives(self) -> List[MethodPlan]:
@@ -64,8 +77,10 @@ class EventPlan:
 class Action:
     day: date
     kind: str
-    plan: EventPlan
+    code: str
     text: str
+    plan: Optional[EventPlan] = None
+    name: str = ""
 
 
 def short_window_start(cal: MarketCalendar, ex_date: date, method: ShortMethod) -> date:
@@ -152,6 +167,7 @@ def plan_method(
     cal: MarketCalendar,
     settings: Settings,
     price: float,
+    popularity: Optional[str] = None,
 ) -> MethodPlan:
     last = rights.last_cum_date
     if method.is_seido:
@@ -182,7 +198,7 @@ def plan_method(
         return MethodPlan(method, window_start, first_possible, cheapest, breakeven, None,
                           f"利益が最低ライン({settings.min_profit_yen:,}円)未満")
 
-    ratio = settings.premium_ratio_for(item.popularity)
+    ratio = settings.premium_ratio_for(item.popularity if popularity is None else popularity)
     target = max(settings.min_profit_yen, math.ceil(cheap_net * (1 - ratio)))
     recommended = cheapest
     for d in _business_days(cal, first_possible, last):
@@ -197,7 +213,7 @@ def plan_method(
     return MethodPlan(method, window_start, first_possible, cheapest, breakeven, recommended, reason)
 
 
-def _phase(today: date, item: WatchItem, rights: RightsDates, rec: Optional[Quote],
+def _phase(today: date, crossed: bool, rights: RightsDates, rec: Optional[Quote],
            cal: MarketCalendar) -> str:
     if today > rights.ex_date:
         return "終了"
@@ -205,7 +221,7 @@ def _phase(today: date, item: WatchItem, rights: RightsDates, rec: Optional[Quot
         return "本日現渡し"
     if today > rights.last_cum_date:
         return f"現渡し待ち（{fmt_date(rights.ex_date)}）"
-    if item.crossed:
+    if crossed:
         return f"クロス済み（現渡しは{rights.ex_date.month}/{rights.ex_date.day}）"
     if rec is None:
         return "見送り"
@@ -224,12 +240,22 @@ def plan_event(
     cal: MarketCalendar,
     settings: Settings,
     price: float,
+    position: Optional[Position] = None,
 ) -> EventPlan:
     warnings: List[str] = list(item.notes)
     methods = methods_for(item, settings)
-    mplans = [plan_method(item, rights, m, today, cal, settings, price) for m in methods]
+
+    popularity, popularity_auto = item.popularity, False
+    if not popularity and settings.auto_popularity:
+        benefit_yield = item.benefit_value / (price * item.shares) if price > 0 else 0.0
+        popularity = "高" if rights.record_date.month in (3, 9) or benefit_yield >= 0.01 else "中"
+        popularity_auto = True
+
+    mplans = [plan_method(item, rights, m, today, cal, settings, price, popularity) for m in methods]
+    viable = any(mp.cheapest.decision_net(settings) >= settings.min_profit_yen for mp in mplans)
 
     if item.long_term and not settings.include_long_term:
+        viable = False
         for mp in mplans:
             mp.recommended = None
             mp.reason = "長期保有条件があるため見送り（include_long_term で変更可）"
@@ -278,8 +304,11 @@ def plan_event(
         if q.dividend_cost > 0 and not settings.dividend_tax_recovered:
             warnings.append(f"配当の源泉税ズレ {q.dividend_cost:,}円（特定口座の損益通算で戻せる設定なら0）")
 
-    phase = _phase(today, item, rights, best.recommended if best else None, cal)
-    return EventPlan(item, rights, mplans, best, reference, phase, capital, warnings)
+    crossed = item.crossed or position is not None
+    phase = _phase(today, crossed, rights, best.recommended if best else None, cal)
+    return EventPlan(item, rights, mplans, best, reference, phase, capital, warnings,
+                     notional=notional, popularity=popularity, popularity_auto=popularity_auto,
+                     viable=viable, position=position)
 
 
 @dataclass
@@ -287,15 +316,22 @@ class PlanResult:
     today: date
     plans: List[EventPlan]
     skipped: List[str]            # 株価なし・除外などで計画できなかった銘柄
+    positions: List[Position] = field(default_factory=list)  # 建玉の記録（全状態）
+    settings: Settings = field(default_factory=Settings)
+    cal: MarketCalendar = field(default_factory=MarketCalendar)
 
     @property
     def recommended(self) -> List[EventPlan]:
-        return [p for p in self.plans if p.best is not None]
+        return [p for p in self.plans if p.recommended is not None]
 
     @property
     def passed(self) -> List[EventPlan]:
-        """権利付最終日前だが、利益不足などで見送りの銘柄。"""
-        return [p for p in self.plans if p.best is None and self.today <= p.rights.last_cum_date]
+        """権利付最終日前だが、利益不足・資金枠などで見送りの銘柄。"""
+        return [p for p in self.plans if p.recommended is None and self.today <= p.rights.last_cum_date]
+
+    @property
+    def open_positions(self) -> List[Position]:
+        return [p for p in self.positions if p.status == STATUS_OPEN]
 
     @property
     def settling(self) -> List[EventPlan]:
@@ -309,9 +345,12 @@ def build_plan(
     settings: Settings,
     prices: Optional[Dict[str, float]] = None,
     cal: Optional[MarketCalendar] = None,
+    positions: Optional[List[Position]] = None,
 ) -> PlanResult:
     cal = cal or MarketCalendar(settings.extra_market_holidays, settings.settlement_days)
     prices = prices or {}
+    positions = list(positions or [])
+    open_by_event = {(p.code, p.record_date): p for p in positions if p.status == STATUS_OPEN}
     excluded = set(settings.exclude_codes)
     plans: List[EventPlan] = []
     skipped: List[str] = []
@@ -330,32 +369,90 @@ def build_plan(
         for rights in upcoming_rights(item, today, cal):
             if rights.last_cum_date > horizon_end:
                 continue
-            plans.append(plan_event(item, rights, today, cal, settings, price))
+            position = open_by_event.get((item.code, rights.record_date))
+            plans.append(plan_event(item, rights, today, cal, settings, price, position))
+
+    result = PlanResult(today, plans, skipped, positions, settings, cal)
+    if settings.capital_budget_yen > 0:
+        apply_budget(result)
 
     def sort_key(p: EventPlan):
         q = p.recommended
         return (0 if q else 1, -(q.net_expected if q else -10**9), p.rights.last_cum_date)
 
     plans.sort(key=sort_key)
-    return PlanResult(today, plans, skipped)
+    return result
 
 
-def peak_capital(plans: List[EventPlan]) -> Tuple[int, Optional[date]]:
-    """目安どおりに建てた場合に同時に必要となる資金のピーク（目安）。"""
-    events: Dict[date, int] = {}
-    for p in plans:
+# ---------- 資金 ----------
+
+Interval = Tuple[date, date, float]  # (資金が出ていく日, 戻る日, 約定代金)
+
+
+def capital_usage(notionals: Iterable[float], settings: Settings) -> int:
+    """同時に持つ建玉の約定代金から、必要資金（現物代金＋委託保証金。保証金は最低額あり）を出す。"""
+    total = sum(notionals)
+    if total <= 0:
+        return 0
+    return math.ceil(total + max(settings.min_margin_deposit_yen, total * settings.margin_rate))
+
+
+def _intervals(result: PlanResult) -> List[Interval]:
+    """目安どおりに建てた候補と、保有中の建玉が資金を使う期間。"""
+    cal, out = result.cal, []
+    for p in result.plans:
         q = p.recommended
-        if q is None:
+        if p.position is not None or q is None:
             continue
-        events[q.entry_date] = events.get(q.entry_date, 0) + p.capital
-        release = q.close_settle + timedelta(days=1)
-        events[release] = events.get(release, 0) - p.capital
-    running, peak, peak_day = 0, 0, None
-    for d in sorted(events):
-        running += events[d]
-        if running > peak:
-            peak, peak_day = running, d
+        start = result.today if p.crossed else q.entry_date
+        out.append((start, q.close_settle, p.notional))
+    for pos in result.open_positions:
+        ex = cal.rights_dates(pos.record_date).ex_date
+        out.append((pos.entry_date, cal.settlement_date(max(ex, result.today)), pos.notional))
+    return out
+
+
+def _peak_over(intervals: List[Interval], start: date, end: date, settings: Settings) -> int:
+    points = {start} | {s for s, _, _ in intervals if start <= s <= end}
+    return max(capital_usage([n for s, e, n in intervals if s <= d <= e], settings) for d in points)
+
+
+def peak_capital(result: PlanResult) -> Tuple[int, Optional[date]]:
+    """目安どおりに建てた場合に同時に必要となる資金のピーク（最低保証金を含む目安）。"""
+    ivs = _intervals(result)
+    peak, peak_day = 0, None
+    for d in sorted({s for s, _, _ in ivs}):
+        usage = capital_usage([n for s, e, n in ivs if s <= d <= e], result.settings)
+        if usage > peak:
+            peak, peak_day = usage, d
     return peak, peak_day
+
+
+def apply_budget(result: PlanResult) -> None:
+    """資金枠に収まるよう、利回りの高い候補から順に採用し、残りを見送りにする。"""
+    settings = result.settings
+    budget = settings.capital_budget_yen
+    # 保有中の建玉とクロス済みの銘柄は確定分として先に積む
+    committed: List[Interval] = []
+    for pos in result.open_positions:
+        ex = result.cal.rights_dates(pos.record_date).ex_date
+        committed.append((pos.entry_date, result.cal.settlement_date(max(ex, result.today)), pos.notional))
+    for p in result.plans:
+        q = p.recommended
+        if q is not None and p.crossed and p.position is None:
+            committed.append((result.today, q.close_settle, p.notional))
+    candidates = [p for p in result.plans if p.recommended is not None and not p.crossed]
+    candidates.sort(key=lambda p: -(p.roi or 0.0))
+    chosen = list(committed)
+    for p in candidates:
+        q = p.recommended
+        iv = (q.entry_date, q.close_settle, p.notional)
+        if _peak_over(chosen + [iv], iv[0], iv[1], settings) <= budget:
+            chosen.append(iv)
+        else:
+            p.excluded_reason = (f"資金枠（{budget:,}円）に収まらないため見送り"
+                                 "（同じ時期に利回りの高い候補を優先）")
+            p.phase = "見送り（資金枠）"
 
 
 def order_text(label: str, shares: int) -> str:
@@ -363,45 +460,103 @@ def order_text(label: str, shares: int) -> str:
     return f"①{label} 売り(寄成) {shares:,}株 → ②現物買い(寄成・預り区分「特定」) {shares:,}株"
 
 
+def method_by_id(settings: Settings, method_id: str) -> Optional[ShortMethod]:
+    return next((m for m in settings.methods if m.id == method_id), None)
+
+
+def position_due_date(result: PlanResult, pos: Position) -> Optional[date]:
+    """建玉の返済期日（一般信用の短期のみ）。"""
+    m = method_by_id(result.settings, pos.method_id)
+    if m is None or not m.is_short_term:
+        return None
+    return short_due_date(result.cal, pos.entry_date, m)
+
+
 def actions_on(day: date, result: PlanResult) -> List[Action]:
     """指定日にやるべきこと（その日の寄付〜大引けで約定させる注文・現渡し）。"""
     actions: List[Action] = []
+    ledger_in_use = bool(result.positions)
+
+    # 建玉の記録がある銘柄は、その記録にもとづいて現渡しを知らせる
+    for pos in result.open_positions:
+        ex = result.cal.rights_dates(pos.record_date).ex_date
+        if day != ex:
+            continue
+        m = method_by_id(result.settings, pos.method_id)
+        due = position_due_date(result, pos)
+        due_text = f"返済期日 {fmt_date(due)}" if due else "返済期日なし"
+        actions.append(Action(day, "現渡し", pos.code,
+                              f"{pos.code} {pos.name}: 権利落ち日。保有中の建玉（{m.label if m else pos.method_id}・"
+                              f"{fmt_date(pos.entry_date)}建て・{pos.shares:,}株・{due_text}）を「現渡し（品渡し）」"
+                              f"で決済（返済買いではない）。終わったら position close {pos.id}", name=pos.name))
+
     for p in result.plans:
         name = f"{p.item.code} {p.item.name}"
         rd = p.rights
-        if day == rd.ex_date and p.method_plans:
-            actions.append(Action(day, "現渡し", p,
-                                  f"{name}: 権利落ち日。クロスした建玉があれば「現渡し（品渡し）」で決済"
-                                  "（返済買いではない）"))
+        if day == rd.ex_date and p.method_plans and p.position is None:
+            # 記録がない場合: クロス済の印があるか、（記録を使っていなければ）候補になり得た銘柄だけ知らせる
+            if p.item.crossed or (not ledger_in_use and p.viable):
+                actions.append(Action(day, "現渡し", p.item.code,
+                                      f"{name}: 権利落ち日。クロスした建玉があれば「現渡し（品渡し）」で決済"
+                                      "（返済買いではない）", p, p.item.name))
         q = p.recommended
-        if q is None or day > rd.last_cum_date or p.item.crossed:
+        if q is None or day > rd.last_cum_date or p.crossed:
             continue
         label = p.best.method.label
         orders = order_text(label, p.item.shares)
         alts = [mp.method.label for mp in p.alternatives if mp.first_possible <= day]
         alt_text = f"（在庫がなければ {' → '.join(alts)}）" if alts else ""
+        record_hint = f"建てたら position add {p.item.code} --method {p.best.method.id}"
         if day == rd.last_cum_date:
-            actions.append(Action(day, "最終日", p,
+            actions.append(Action(day, "最終日", p.item.code,
                                   f"{name}: 権利付最終日。まだクロスしていなければ寄付前に「{orders}」"
                                   f"の順で発注{alt_text}。寄付に間に合わなければ、両方とも引成・同じ株数で"
-                                  "続けて発注（取引時間中に成行や指値で売り買いしない）"))
+                                  f"続けて発注（取引時間中に成行や指値で売り買いしない）。{record_hint}",
+                                  p, p.item.name))
         elif day >= q.entry_date:
             head = "エントリー目安日" if day == q.entry_date else "エントリー期間中"
-            actions.append(Action(day, "エントリー", p,
+            actions.append(Action(day, "エントリー", p.item.code,
                                   f"{name}: {head}（まだクロスしていなければ）。在庫を確認して「{orders}」"
                                   f"の順で発注{alt_text}。見込み利益 {q.net_expected:,}円・最終日 "
-                                  f"{fmt_date(rd.last_cum_date)}。建てたらウォッチリストの「クロス済」に○"))
+                                  f"{fmt_date(rd.last_cum_date)}。{record_hint}", p, p.item.name))
         for mp in p.method_plans:
             if not mp.method.is_short_term or day != mp.window_start:
                 continue
             if mp is p.best and q.entry_date == day:
                 continue  # エントリーの通知と重なるので出さない
-            actions.append(Action(day, "短期初日", p,
+            actions.append(Action(day, "短期初日", p.item.code,
                                   f"{name}: {mp.method.label} で建てられる初日。人気銘柄は前夜〜寄付前に"
-                                  f"在庫がなくなりやすい（参考。目安は {fmt_date(q.entry_date)} の {label}）"))
+                                  f"在庫がなくなりやすい（参考。目安は {fmt_date(q.entry_date)} の {label}）",
+                                  p, p.item.name))
     order = {"現渡し": 0, "最終日": 1, "エントリー": 2, "短期初日": 3}
-    actions.sort(key=lambda a: (order.get(a.kind, 9), a.plan.item.code))
+    actions.sort(key=lambda a: (order.get(a.kind, 9), a.code))
     return actions
+
+
+BENEFIT_REMINDER_DAYS = 60  # 権利確定日から何日たったら優待の到着を確認するか
+
+
+def position_alerts(result: PlanResult) -> List[str]:
+    """建玉の記録にもとづく要対応事項（日付に関係なく、今の状態で出す）。"""
+    today, alerts = result.today, []
+    for pos in result.positions:
+        rd = result.cal.rights_dates(pos.record_date)
+        if pos.status == STATUS_OPEN:
+            due = position_due_date(result, pos)
+            if due is not None and today > due:
+                alerts.append(f"{pos.label}: 返済期日（{fmt_date(due)}）を過ぎています。強制決済されていないか"
+                              f"証券会社の画面で確認し、終わっていれば position close {pos.id}")
+            elif today > rd.ex_date:
+                alerts.append(f"{pos.label}: 権利落ち日（{fmt_date(rd.ex_date)}）を過ぎても保有中のままです。"
+                              f"現渡ししたら position close {pos.id}"
+                              + (f"（返済期日 {fmt_date(due)}）" if due else ""))
+            elif today <= rd.last_cum_date and pos.entry_date > rd.last_cum_date:
+                alerts.append(f"{pos.label}: 建日が権利付最終日より後なので、この回の権利は取れません")
+        elif pos.status == STATUS_CLOSED and (today - rd.record_date).days >= BENEFIT_REMINDER_DAYS:
+            alerts.append(f"{pos.label}: 権利確定日（{rd.record_date.isoformat()}）から"
+                          f"{(today - rd.record_date).days}日。優待が届いたら "
+                          f"position received {pos.id} --value 評価額（円）で記録")
+    return alerts
 
 
 def next_action_day(result: PlanResult, cal: MarketCalendar, after: date,

@@ -129,12 +129,32 @@ class Settings:
     exclude_codes: List[str] = field(default_factory=list)
     # 長期保有条件のある銘柄も候補に含めるか（毎回クロスして株主番号をつなぐ「継続クロス」をする人向け）
     include_long_term: bool = False
+    # 優待クロスに使える資金の上限（円）。0 なら上限なし。超える分は利回りの低い候補から見送る
+    capital_budget_yen: int = 0
+    # 信用口座に必要な委託保証金の最低額（円）。必要資金の計算に使う
+    min_margin_deposit_yen: int = 300_000
+    # 「人気」列が空欄の銘柄を自動判定するか（3月・9月の権利、または優待利回り1%以上なら「高」）
+    auto_popularity: bool = True
+    # 料率（methods）を最後に証券会社のサイトで確認した日。古くなったら警告する
+    rates_checked_on: Optional[date] = date(2026, 9, 30)
+    rates_stale_days: int = 90
 
     def enabled_methods(self) -> List[ShortMethod]:
         return [m for m in self.methods if m.enabled]
 
     def premium_ratio_for(self, popularity: str) -> float:
         return self.popularity_premium.get(popularity, self.inventory_premium_ratio)
+
+    def rates_warning(self, today: date) -> Optional[str]:
+        """料率の確認日が古いときの警告文。"""
+        if self.rates_checked_on is None:
+            return "設定の料率をいつ確認したか（rates_checked_on）が未入力です。証券会社の最新の料率を確認してください"
+        days = (today - self.rates_checked_on).days
+        if days > self.rates_stale_days:
+            return (f"料率を確認した日（{self.rates_checked_on.isoformat()}）から{days}日たっています。"
+                    "証券会社の最新の貸株料・手数料・返済期限を確認し、settings.json の methods と "
+                    "rates_checked_on を更新してください")
+        return None
 
 
 def normalize_code(code: Any) -> str:
@@ -149,6 +169,8 @@ _SETTINGS_TYPES: Dict[str, Tuple[type, ...]] = {
     "max_lookback_business_days": (int,), "dividend_tax_recovered": (bool,),
     "benefit_tax_rate": _NUM, "margin_rate": _NUM, "seido_risk_basis": (str,),
     "seido_worst_multiplier": _NUM, "settlement_days": (int,), "include_long_term": (bool,),
+    "capital_budget_yen": (int,), "min_margin_deposit_yen": (int,), "auto_popularity": (bool,),
+    "rates_checked_on": (date, type(None)), "rates_stale_days": (int,),
 }
 _METHOD_TYPES: Dict[str, Tuple[type, ...]] = {
     "id": (str,), "broker": (str,), "label": (str,), "kind": (str,), "lending_rate": _NUM,
@@ -203,6 +225,9 @@ def settings_from_dict(data: Dict[str, Any]) -> Settings:
         ]
     if "exclude_codes" in data:
         kwargs["exclude_codes"] = [normalize_code(c) for c in data.pop("exclude_codes")]
+    if "rates_checked_on" in data:
+        v = data.pop("rates_checked_on")
+        kwargs["rates_checked_on"] = date.fromisoformat(str(v)) if v else None
     known = {f.name for f in fields(Settings)}
     unknown = set(data) - known
     if unknown:
@@ -216,6 +241,8 @@ def settings_from_dict(data: Dict[str, Any]) -> Settings:
         raise ValueError("seido_risk_basis は worst か expected を指定してください")
     if s.horizon_days < 0 or s.max_lookback_business_days < 0 or s.settlement_days < 1:
         raise ValueError("horizon_days・max_lookback_business_days は0以上、settlement_days は1以上にしてください")
+    if s.capital_budget_yen < 0 or s.min_margin_deposit_yen < 0:
+        raise ValueError("capital_budget_yen・min_margin_deposit_yen は0以上にしてください")
     ids = [m.id for m in s.methods]
     if len(ids) != len(set(ids)):
         raise ValueError("methods の id が重複しています")

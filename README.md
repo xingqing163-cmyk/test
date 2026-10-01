@@ -20,8 +20,9 @@
    - Windows：エクスプローラーでそのフォルダを開き、上のアドレス欄に `cmd` と入力して Enter
    - Mac：ターミナルで `cd `（cd と半角スペース）と打ってから、Finder でそのフォルダをターミナルにドラッグして Enter
 4. `python -m yutai_cross init` → `python -m yutai_cross plan`（架空銘柄の表が出れば成功）
-5. `mydata` フォルダの `watchlist.csv` を Excel で開き、架空の行を消して自分の銘柄を書く。保存は「CSV UTF-8（コンマ区切り）」で
+5. `mydata` フォルダの `watchlist.csv` を Excel で開き、架空の行を消して自分の銘柄を書く。保存は「CSV UTF-8（コンマ区切り）」で。書けたら `python -m yutai_cross check` で入力ミスがないか確認
 6. 毎晩 `python -m yutai_cross today` を実行し、「次の営業日」に書かれたことをする
+7. クロスしたら `python -m yutai_cross position add 銘柄コード --method sbi_short`（方法は today の表示どおり）で記録。現渡ししたら `position close`、優待が届いたら `position received` で記録
 
 「No module named yutai_cross」と出たら、README.md があるフォルダにいません（手順3へ）。
 
@@ -29,9 +30,16 @@
 
 ```bash
 python -m yutai_cross init                 # mydata/ にサンプルのウォッチリストと設定をコピー
+python -m yutai_cross check                # ウォッチリストと設定の入力チェック
 python -m yutai_cross plan                 # 条件を満たす候補とスケジュールを表示
+python -m yutai_cross plan --budget 1000000    # 資金枠100万円に収まる組み合わせだけ選ぶ
 python -m yutai_cross plan -o mydata/reports   # Markdown / CSV / カレンダー(ics) も出力
-python -m yutai_cross today                # 今日と次の営業日にやることだけ表示
+python -m yutai_cross today                # 今日と次の営業日にやること・要対応の建玉
+python -m yutai_cross position add X001 --method rakuten_short --price 1850   # クロスしたら記録
+python -m yutai_cross position close 1     # 現渡ししたら記録（1 は建玉のID）
+python -m yutai_cross position received 1 --value 3000   # 優待が届いたら記録（実績CSVに追記）
+python -m yutai_cross position list        # 建玉の一覧
+python -m yutai_cross calendar             # ウォッチリストの1年分の権利日カレンダー
 python -m yutai_cross dates 2026-12-31     # 権利付最終日・権利落ち日・短期初日
 python -m yutai_cross cost --record 2026-12-31 --price 2400 --benefit 1000   # コスト試算
 python -m yutai_cross tax --year 2026      # 確定申告用メモ（優待の雑所得の集計）
@@ -62,7 +70,9 @@ X007   （架空）ほしぞらレジ 10/14(水)  SBI 無期限 10/28(水)    1,
 - 証券会社ごとの売建方法（一般信用 短期／無期限、制度信用）について、貸株料（受渡日ベースの日数）・逆日歩（想定／最高料率×4倍での見積もり）・手数料・配当落調整金と源泉税のズレを計算
 - 損益分岐日（これより前に建てると最低利益を割る日）と、銘柄の人気度に応じたエントリー目安日を算出
 - 長期保有条件・除外銘柄（勤務先など）・逆日歩リスク・連休による日数増・入力の読み違いなどを警告
-- 目安どおりに建てた場合の必要資金ピークを計算
+- 目安どおりに建てた場合の必要資金ピーク（信用口座の最低保証金30万円を含む）を計算し、資金枠（`--budget`）を超える分は利回りの低い候補から見送る
+- クロスした建玉を記録すると、現渡し日・返済期日・優待の到着確認を知らせ、優待が届いたら実績CSVに追記する
+- 「人気」が空欄の銘柄は自動判定（3月・9月の権利、または優待利回り1%以上なら「高」）。料率の確認日が90日より古いと警告
 
 在庫の確認と発注は、各証券会社の画面で行ってください（ログインが必要なため自動化していません）。
 
