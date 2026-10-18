@@ -6,6 +6,7 @@
 - マンガ：[docs/manga/yutai_cross_manga.html](docs/manga/yutai_cross_manga.html)（全8話。まず全体像をつかむ）
 - 講座：[docs/course/README.md](docs/course/README.md)（全10回＋チェックリスト）
 - ツール：`yutai_cross/`（Python 3.9+、追加ライブラリ不要）
+- せどり用：[買取差益チェック](docs/kaitori/README.md)（`kaitori_check/`。買取サイトの新品買取価格とヤフショの価格・ポイントを比べ、仕入れて黒字になる商品を一覧にする）
 
 > **免責事項**：本リポジトリの内容とツールの出力は、作成者が個人的に調べた情報と試算であり、正確性・完全性を保証しません。特定の銘柄・証券会社・取引を推奨・勧誘するものではなく、投資助言ではありません。利用により生じた損失について責任を負いません。記載の証券会社や Yahoo 等とは関係がありません。料率・ルールは2026年9月時点の調査に基づく初期値です。発注前に必ず証券会社・会社IRで最新情報を確認し、投資の最終判断はご自身で行ってください。
 
@@ -75,6 +76,19 @@ X007   （架空）ほしぞらレジ 10/14(水)  SBI 無期限 10/28(水)    1,
 - 「人気」が空欄の銘柄は自動判定（3月・9月の権利、または優待利回り1%以上なら「高」）。料率の確認日が90日より古いと警告
 
 在庫の確認と発注は、各証券会社の画面で行ってください（ログインが必要なため自動化していません）。
+
+## せどり：買取差益チェック
+
+買取サイト（例: SY買取のカメラ本体・レンズ）の新品買取価格と、Yahoo!ショッピングの販売価格・ポイント・送料を
+商品ごとに比べ、利益の大きい順に一覧にします。使うにはヤフショAPIの Client ID（無料）が必要です。
+詳しい手順・計算方法・会計と税金のメモは [docs/kaitori/README.md](docs/kaitori/README.md) を見てください。
+
+```bash
+python -m kaitori_check init        # mydata/kaitori_settings.json を作る（yahoo_appid を書く）
+python -m kaitori_check fetch       # 買取サイトの価格一覧を mydata/kaitori_list.csv に保存
+python -m kaitori_check check       # ヤフショで探して利益を判定（mydata/reports/ に HTML・CSV）
+python -m kaitori_check calc --sell 105000 --buy 98000 --points 4450   # 1商品の手計算
+```
 
 ## テスト
 

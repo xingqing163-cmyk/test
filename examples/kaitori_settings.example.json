@@ -1,0 +1,61 @@
+{
+  "_comment": "買取差益チェックの設定。_ で始まる項目はコメントとして無視されます。金額は円、割合は 0.05=5% の形で書きます。",
+
+  "yahoo_appid": "",
+  "_yahoo_appid": "Yahoo!デベロッパーネットワークで発行した Client ID。空なら環境変数 YAHOO_APPID を使う。この値は他人に見せないこと",
+
+  "lyp_premium": false,
+  "_lyp_premium": "LYPプレミアム会員なら true（会員価格・会員向けポイントがあればそちらで計算）",
+  "extra_point_rate": 0.0,
+  "_extra_point_rate": "APIの表示ポイントに上乗せする自分のポイント率（税抜価格に対して）。PayPayカード払いやキャンペーンなど、確実にもらえる分だけ。不確かなら 0",
+  "point_value": 1.0,
+  "_point_value": "1ポイントを何円とみなすか。期間限定ポイントを使い切れないなら 0.8 などに下げる",
+  "judge_with_points": true,
+  "_judge_with_points": "false にするとポイントを除いた現金だけで黒字かどうかを判定する",
+
+  "assumed_shipping_yen": 1000,
+  "_assumed_shipping_yen": "ヤフショ側が送料無料でない（または不明な）ときに見込む送料",
+  "send_shipping_yen": 0,
+  "_send_shipping_yen": "買取サイトへ送る送料（1点あたり）。買取サイトの送料無料条件を満たすなら 0。まとめて送るなら送料÷点数",
+  "transfer_fee_yen": 0,
+  "_transfer_fee_yen": "買取代金の振込手数料（1点あたり）",
+  "other_cost_yen": 0,
+  "_other_cost_yen": "梱包材などその他の経費（1点あたり）",
+
+  "tax_mode": "exempt",
+  "_tax_mode": "消費税の扱い。exempt=免税事業者 / general=本則課税 / simplified=簡易課税 / special=2割特例など（docs/kaitori/README.md の「消費税」を参照）",
+  "deemed_purchase_rate": 0.9,
+  "_deemed_purchase_rate": "簡易課税のみなし仕入率。買取業者（事業者）への販売は第1種事業（卸売業）で 0.9",
+  "special_ratio": 0.2,
+  "_special_ratio": "special のとき、売上の消費税のうち納める割合（2割特例なら 0.2）",
+  "input_credit_ratio": 1.0,
+  "_input_credit_ratio": "本則課税で、仕入の消費税のうち控除できる割合。インボイス登録のないストアからの仕入れが多いなら下げる",
+
+  "min_profit_yen": 1000,
+  "min_profit_rate": 0.02,
+  "_min_profit": "利益がこの額以上、かつ利益率（利益÷仕入価格と送料）がこの割合以上なら「黒字」。届くまでの値下がりや減額に備えて余裕をもたせる",
+
+  "price_floor_ratio": 0.6,
+  "_price_floor_ratio": "商品名で探したとき、買取価格のこの割合より安いヤフショ商品は別商品・付属品とみなして除外",
+  "min_store_reviews": 30,
+  "min_store_rating": 4.0,
+  "_store": "ストア評価の件数・平均がこれ未満なら注意を出す",
+
+  "exclude_words": ["中古", "訳あり", "訳アリ", "わけあり", "アウトレット", "展示品", "展示処分", "開封品", "開封済",
+                    "再生品", "整備済", "リファービッシュ", "ジャンク", "箱なし", "箱無し", "外箱なし", "保証なし",
+                    "保証書なし", "並行輸入", "海外版", "海外仕様", "輸入品", "レンタル"],
+  "_exclude_words": "ヤフショの商品名にこの言葉があれば仕入れ候補から外す",
+  "caution_words": ["セット", "予約", "取り寄せ", "取寄", "入荷待ち", "納期", "受注生産", "箱傷", "箱潰れ"],
+  "_caution_words": "外さないが注意を出す言葉",
+
+  "yahoo_results": 30,
+  "yahoo_interval_sec": 1.0,
+  "site_interval_sec": 2.0,
+  "max_pages": 30,
+  "_interval": "相手のサーバーに負担をかけないための待ち時間（秒）と、買取サイトの最大ページ数",
+
+  "sites": [
+    {"name": "SY買取", "category": "カメラ", "url": "https://www.sy-kaitori.com/products?category=cmt2jn04n001l01nvwg3whuml"}
+  ],
+  "_sites": "取得する買取サイトの一覧ページ。カメラ本体とレンズでページが分かれていれば、それぞれ1行ずつ書く。使わない行は \"enabled\": false"
+}

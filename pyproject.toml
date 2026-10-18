@@ -5,13 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "yutai-cross"
 version = "0.1.0"
-description = "株主優待クロス取引の候補検出・タイミング判定ツール"
+description = "株主優待クロス取引の候補検出・タイミング判定ツールと、せどりの買取差益チェックツール"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []
 
 [project.scripts]
 yutai-cross = "yutai_cross.cli:main"
+kaitori-check = "kaitori_check.cli:main"
 
 [tool.setuptools]
-packages = ["yutai_cross"]
+packages = ["yutai_cross", "kaitori_check"]
