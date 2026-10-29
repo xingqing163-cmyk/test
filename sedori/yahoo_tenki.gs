@@ -5,14 +5,16 @@
  *   1. 「２０２６記帳」を開き、拡張機能 > Apps Script にこのファイルの内容を貼り付けて保存する
  *   2. スプレッドシートを再読み込みすると、メニューに「記帳ツール」が出る
  *   3. 初回だけ「記帳ツール > 初期設定」を実行する
- *      （月別シートのAE列・AF列に見出しを入れ、「転記設定」シートを作る）
+ *      （月別シートのAE列・AF列に見出しを入れ、「転記設定」シートを作る。
+ *        さらに、すでに手で転記してある行のAF列に「既存」と入れて対象から外す）
  *   4. 購入したら今までどおり月別シートに記入し、AE列に「今すぐ利用」のポイント数を入れる
  *   5. 「記帳ツール > このシートの未転記を２０２６へ転記」を押す
  *
  * 月別シート（ヤフショ（n））で読む列 … 7〜176行目
  *   N 購入品 / O 購入店 / P 日付 / S 購入金額 / T 付与予定ポイント合計
  *   AE 今すぐ利用（新設・手入力。空欄は0扱い）
- *   AF 転記No（新設・ツールが記入。入っている行は転記済みとして二重転記しない）
+ *   AF 転記No（新設・ツールが記入。転記したらそのNo、初期設定の時点で転記済みだった行は「既存」。
+ *      何か入っている行は二重転記しない）
  *
  * 「２０２６」シートに書く列 … J列（商品名）が空いている最初の行から
  *   I 日付 / J 商品名 / K 店 / O 支払い方法 / P 仕入高 / Q 基本ぽ / U ヤフショ獲得すぐ利用
@@ -23,9 +25,10 @@ const TENKI = {
   ledgerSheet: '２０２６',
   monthlyPrefix: 'ヤフショ（',
   settingsSheet: '転記設定',
-  // 「未転記をまとめて転記」はこの日以降の購入だけを対象にする（これより前は手で転記済み）
+  // 「未転記をまとめて転記」はこの日以降の購入だけを対象にする（これより前は手で転記済み）。
+  // この日以降でも、初期設定の時点で「２０２６」に同じ日付・同じ金額の行がある分は「既存」になる。
   // 書式は必ず 'yyyy/MM/dd'（月・日は2桁）
-  startDate: '2026/10/31',
+  startDate: '2026/10/30',
   monthly: {
     headerRow: 5, firstRow: 7, lastRow: 176,
     name: 'N', store: 'O', date: 'P', amount: 'S', point: 'T', nowUse: 'AE', done: 'AF',
@@ -75,10 +78,63 @@ function tenkiSetup() {
     s.getRange(1, 1, rows.length, 2).setValues(rows);
     created = true;
   }
+  const res = markExisting_(ss);
   SpreadsheetApp.getUi().alert(
     '初期設定が終わりました。\n\n' +
     '・見出しを入れた月別シート：' + headed + '枚（AE列「今すぐ利用」・AF列「転記No」）\n' +
-    '・「転記設定」シート：' + (created ? '新しく作りました' : 'すでにあるのでそのままです'));
+    '・「転記設定」シート：' + (created ? '新しく作りました' : 'すでにあるのでそのままです') + '\n' +
+    '・転記済みとしてAF列に「既存」と入れた行：' + res.marked + '行\n\n' +
+    (res.pending.length
+      ? 'まだ「' + TENKI.ledgerSheet + '」にない行（次の転記で対象になります）：\n' + res.pending.join('\n')
+      : 'まだ「' + TENKI.ledgerSheet + '」にない行はありません。'));
+}
+
+/**
+ * 初期設定の時点ですでにある行のAF列に「既存」と入れ、転記の対象から外す。
+ * startDate より前の行はすべて、startDate 以降の行は「２０２６」に同じ日付・同じ金額の行があるものだけ。
+ */
+function markExisting_(ss) {
+  const m = TENKI.monthly;
+  const L = TENKI.ledger;
+  const ledger = ss.getSheetByName(TENKI.ledgerSheet);
+  const pool = {};
+  const last = ledger.getLastRow();
+  if (last >= L.firstRow) {
+    const n = last - L.firstRow + 1;
+    const dates = ledger.getRange(L.firstRow, col_(L.date), n, 1).getValues();
+    const names = ledger.getRange(L.firstRow, col_(L.name), n, 1).getValues();
+    const amounts = ledger.getRange(L.firstRow, col_(L.amount), n, 1).getValues();
+    dates.forEach((d, i) => {
+      if (!(d[0] instanceof Date) || String(names[i][0]).trim() === '') return;
+      const day = dateKey_(d[0]);
+      if (day < TENKI.startDate) return;
+      const k = day + '|' + amounts[i][0];
+      pool[k] = (pool[k] || 0) + 1;
+    });
+  }
+  let marked = 0;
+  const pending = [];
+  ss.getSheets()
+    .filter(s => s.getName().indexOf(TENKI.monthlyPrefix) === 0 && s.getName().indexOf('原紙') < 0)
+    .forEach(s => {
+      const rows = readMonthly_(s).filter(r => r.done === '' && r.date instanceof Date);
+      if (!rows.length) return;
+      const range = s.getRange(m.firstRow, col_(m.done), m.lastRow - m.firstRow + 1, 1);
+      const done = range.getValues();
+      rows.forEach(r => {
+        const day = dateKey_(r.date);
+        const k = day + '|' + r.amount;
+        if (day < TENKI.startDate || pool[k] > 0) {
+          if (day >= TENKI.startDate) pool[k]--;
+          done[r.row - m.firstRow][0] = '既存';
+          marked++;
+        } else {
+          pending.push(s.getName() + ' ' + r.row + '行目  ' + fmtDate_(r.date) + '  ' + short_(r.name));
+        }
+      });
+      range.setValues(done);
+    });
+  return { marked: marked, pending: pending };
 }
 
 /** 開いている月別シートの、まだ転記していない行（startDate以降）をまとめて転記する */
@@ -100,7 +156,8 @@ function tenkiSelectedRows() {
     for (let r = rg.getRow(); r <= rg.getLastRow(); r++) picked[r] = true;
   });
   const rows = readMonthly_(sheet).filter(r => picked[r.row]);
-  const skipped = rows.filter(r => r.done).map(r => r.row + '行目（転記済み No.' + r.done + '）');
+  const skipped = rows.filter(r => r.done)
+    .map(r => r.row + '行目（' + (r.done === '既存' ? '初期設定の時点で転記済み' : '転記済み No.' + r.done) + '）');
   transfer_(sheet, rows.filter(r => !r.done), skipped);
 }
 
@@ -226,6 +283,11 @@ function monthlySheet_() {
   const name = sheet.getName();
   if (name.indexOf(TENKI.monthlyPrefix) !== 0 || name.indexOf('原紙') >= 0) {
     SpreadsheetApp.getUi().alert('ヤフショ（月）のシートを開いてから実行してください。');
+    return null;
+  }
+  // 初期設定（「既存」の記入）をする前に転記すると、手で転記済みの行まで二重に転記してしまう
+  if (sheet.getRange(TENKI.monthly.headerRow, col_(TENKI.monthly.done), 1, 1).getValues()[0][0] !== '転記No') {
+    SpreadsheetApp.getUi().alert('先に「記帳ツール > 初期設定」を実行してください。');
     return null;
   }
   return sheet;
